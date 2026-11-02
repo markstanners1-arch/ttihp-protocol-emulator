@@ -34,6 +34,7 @@ module protocol_chip (
     reg [14:0] r_outcfg [0:1];
     reg [12:0] r_misc   [0:1];
     reg [14:0] r_incfg  [0:1];
+    reg [7:0]  r_filter;            // chip-wide input glitch filter: [3:0] N, [7:4] P (docs/input_filter.md)
 
     integer k;
     always @(posedge clk) begin
@@ -41,6 +42,7 @@ module protocol_chip (
             for (k = 0; k < 2; k = k + 1) begin
                 run[k] <= 1'b0; r_clkdiv[k] <= 0; r_wrap[k] <= 0; r_outcfg[k] <= 0; r_misc[k] <= 0; r_incfg[k] <= 0;
             end
+            r_filter <= 8'd0;
         end else if (h_wr) begin
             case (h_addr)
                 6'h20: run[h_eng]      <= h_wdata[0];
@@ -49,6 +51,7 @@ module protocol_chip (
                 6'h23: r_outcfg[h_eng] <= h_wdata[14:0];
                 6'h24: r_misc[h_eng]   <= h_wdata[12:0];
                 6'h25: r_incfg[h_eng]  <= h_wdata[14:0];
+                6'h29: r_filter        <= h_wdata[7:0];
                 default: ;
             endcase
         end
@@ -57,7 +60,16 @@ module protocol_chip (
     // ------------------------------------------------------------ pins as the engines see them (32 numbers)
     wire [31:0] e_out_val [0:1];
     wire [31:0] e_out_dir [0:1];
-    wire [31:0] pins_in = {12'd0, ui_in[7:3], 7'd0, uio_in};      // 0-7 uio, 15-19 ui_in[3..7]
+    // every engine input: 2 flip-flop synchroniser, then the glitch filter (one shared setting)
+    reg  [12:0] in_s1, in_s2;
+    always @(posedge clk) begin
+        in_s1 <= {ui_in[7:3], uio_in};
+        in_s2 <= in_s1;
+    end
+    wire [12:0] in_f;
+    glitch_filter #(.WIDTH(13)) filt (.clk(clk), .rst_n(rst_n), .p(r_filter[7:4]), .n(r_filter[3:0]),
+                                      .in(in_s2), .out(in_f));
+    wire [31:0] pins_in = {12'd0, in_f[12:8], 7'd0, in_f[7:0]};   // 0-7 uio, 15-19 ui_in[3..7]
 
     // ------------------------------------------------------------ the two engines
     wire [15:0] pop_data [0:1];
@@ -101,6 +113,7 @@ module protocol_chip (
             6'h25: h_rdata = {1'b0, r_incfg[h_eng]};
             6'h27: h_rdata = (rxl[h_eng] != 0) ? pop_data[h_eng] : 16'd0;
             6'h28: h_rdata = {2'b0, e_pc[h_eng], run[h_eng], 1'b0, rxl[h_eng], 1'b0, txl[h_eng]};
+            6'h29: h_rdata = {8'd0, r_filter};
             default: h_rdata = 16'd0;
         endcase
     end

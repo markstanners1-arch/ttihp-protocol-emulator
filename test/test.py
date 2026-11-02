@@ -92,25 +92,36 @@ async def test_project(dut):
     assert int(dut.uio_oe.value) & 1 == 1, "engine pin 0 not driven"
     assert int(dut.uio_out.value) & 1 == 1, "UART line not idling high"
 
-    # 3. send 'U' and decode it from the pin
-    await host.write(0, 0x26, ord("U"))
-
+    # 3. send 'U' and decode it from the pin. The receiver starts listening BEFORE the byte is pushed
+    #    (the engine starts sending within a few clocks, before the SPI write has even finished).
     def line():
         return int(dut.uio_out.value) & 1
 
-    for _ in range(2000):
-        await ClockCycles(dut.clk, 1)
-        if line() == 0:
-            break
-    else:
-        assert False, "no start bit seen"
-    await ClockCycles(dut.clk, 4)                 # middle of the start bit
-    assert line() == 0
-    byte = 0
-    for i in range(8):
+    async def receive():
+        for _ in range(4000):
+            await ClockCycles(dut.clk, 1)
+            if line() == 0:
+                break
+        else:
+            return None
+        await ClockCycles(dut.clk, 4)             # middle of the start bit
+        if line() != 0:
+            return None
+        b = 0
+        for i in range(8):
+            await ClockCycles(dut.clk, 8)
+            b |= line() << i
         await ClockCycles(dut.clk, 8)
-        byte |= line() << i
-    await ClockCycles(dut.clk, 8)
-    assert line() == 1, "bad stop bit"
+        return b if line() == 1 else None          # stop bit must be high
+
+    rx = cocotb.start_soon(receive())
+    await host.write(0, 0x26, ord("U"))
+    byte = await rx
+    assert byte is not None, "no valid frame seen"
     dut._log.info(f"engine A sent 0x{byte:02X}")
     assert byte == ord("U")
+
+    # 4. the input glitch filter register (chip-wide, 0x29) reads back
+    await host.write(0, 0x29, 0x2F)
+    (f,) = await host.read(1, 0x29)
+    assert f == 0x2F, f"FILTER read back 0x{f:04X}"
