@@ -25,6 +25,7 @@ module engine (
     input  wire [4:0]  cfg_side_base,
     input  wire [1:0]  cfg_side_count,    // 0-2
     input  wire        cfg_side_opt,
+    input  wire        cfg_side_dir,      // side-set writes pin directions, not levels
     input  wire [4:0]  cfg_in_base,
     input  wire [4:0]  cfg_jmp_pin,
     input  wire        cfg_out_right,
@@ -317,7 +318,9 @@ module engine (
                 if (pw_en &&  pw_dir) n_out_dir = (out_dir & ~pw_m) | (pw_d & pw_m);
 
                 // side-set: on every executed step, stalled or not; wins over the instruction
-                if (sen)
+                if (sen && cfg_side_dir)
+                    n_out_dir = wr_bits(n_out_dir, cfg_side_base, {3'b0, cfg_side_count}, {11'd0, sval_full});
+                else if (sen)
                     n_out_val = wr_bits(n_out_val, cfg_side_base, {3'b0, cfg_side_count}, {11'd0, sval_full});
 
                 if (!stall) begin

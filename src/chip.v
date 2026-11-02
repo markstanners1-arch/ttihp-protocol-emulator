@@ -32,7 +32,7 @@ module protocol_chip (
     reg [15:0] r_clkdiv [0:1];
     reg [14:0] r_wrap   [0:1];
     reg [14:0] r_outcfg [0:1];
-    reg [12:0] r_misc   [0:1];
+    reg [13:0] r_misc   [0:1];
     reg [14:0] r_incfg  [0:1];
     reg [7:0]  r_filter;            // chip-wide input glitch filter: [3:0] N, [7:4] P (docs/input_filter.md)
 
@@ -49,7 +49,7 @@ module protocol_chip (
                 6'h21: r_clkdiv[h_eng] <= h_wdata;
                 6'h22: r_wrap[h_eng]   <= h_wdata[14:0];
                 6'h23: r_outcfg[h_eng] <= h_wdata[14:0];
-                6'h24: r_misc[h_eng]   <= h_wdata[12:0];
+                6'h24: r_misc[h_eng]   <= h_wdata[13:0];
                 6'h25: r_incfg[h_eng]  <= h_wdata[14:0];
                 6'h29: r_filter        <= h_wdata[7:0];
                 default: ;
@@ -90,6 +90,7 @@ module protocol_chip (
                 .cfg_out_base(r_outcfg[g][4:0]), .cfg_out_count(r_outcfg[g][9:5]), .cfg_set_base(r_outcfg[g][14:10]),
                 .cfg_set_count(r_misc[g][2:0]), .cfg_side_base(r_misc[g][7:3]), .cfg_side_count(r_misc[g][9:8]),
                 .cfg_side_opt(r_misc[g][10]), .cfg_out_right(r_misc[g][11]), .cfg_in_right(r_misc[g][12]),
+                .cfg_side_dir(r_misc[g][13]),
                 .cfg_in_base(r_incfg[g][4:0]), .cfg_jmp_pin(r_incfg[g][9:5]), .cfg_fault_addr(r_incfg[g][14:10]),
                 // program words: only while this engine is stopped
                 .imem_we(h_wr && sel && h_addr[5] == 1'b0 && !run[g]), .imem_addr(h_addr[4:0]), .imem_wdata(h_wdata),
@@ -109,7 +110,7 @@ module protocol_chip (
             6'h21: h_rdata = r_clkdiv[h_eng];
             6'h22: h_rdata = {1'b0, r_wrap[h_eng]};
             6'h23: h_rdata = {1'b0, r_outcfg[h_eng]};
-            6'h24: h_rdata = {3'b0, r_misc[h_eng]};
+            6'h24: h_rdata = {2'b0, r_misc[h_eng]};
             6'h25: h_rdata = {1'b0, r_incfg[h_eng]};
             6'h27: h_rdata = (rxl[h_eng] != 0) ? pop_data[h_eng] : 16'd0;
             6'h28: h_rdata = {2'b0, e_pc[h_eng], run[h_eng], 1'b0, rxl[h_eng], 1'b0, txl[h_eng]};
