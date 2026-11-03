@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Mark Stanners
  * SPDX-License-Identifier: Apache-2.0
  *
- * Protocol emulator: four small programmable engines that run UART/SPI/I2C (and more) as firmware,
+ * Protocol emulator: three small programmable engines that run UART/SPI/I2C (and more) as firmware,
  * loaded and driven over an SPI host port. Full design, models and tests:
  * the ProtocolASIC repository (docs/core_design.md, docs/isa.md, docs/host_port.md).
  */
@@ -19,7 +19,7 @@ module tt_um_gosforth_protocol_emu (
     input  wire       clk,
     input  wire       rst_n
 );
-    protocol_chip #(.NENG(3)) chip (        // MEASUREMENT RUN 3 Nov 2026: four engines (61 % of the core) failed placement twice; how does three place?
+    protocol_chip chip (                    // three engines (chip.v's default; four did not place on the 6x4 tile, 3 Nov 2026)
         .ui_in(ui_in), .uo_out(uo_out), .uio_in(uio_in), .uio_out(uio_out), .uio_oe(uio_oe),
         .ena(ena), .clk(clk), .rst_n(rst_n));
 endmodule

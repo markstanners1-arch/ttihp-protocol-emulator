@@ -1,11 +1,12 @@
-// The whole chip: SPI host port + NENG engines (4 on the ASIC; the FPGA boards fit 2) + their setting registers + pin wiring.
+// The whole chip: SPI host port + NENG engines (3 on the ASIC, decided 3 Nov 2026: four do not place on the 6x4 tile;
+// the MachXO3L kit fits 2, the Cyclone IV board 3) + their setting registers + pin wiring.
 // Tiny Tapeout pin interface. Spec: docs/host_port.md (host side), docs/isa.md (engines).
 
 `timescale 1ns/1ps
 `default_nettype none
 
 module protocol_chip #(
-    parameter NENG = 4                  // engines, 1 to 8 (the host's engine field is 3 bits)
+    parameter NENG = 3                  // engines, 1 to 8 (the host's engine field is 3 bits)
 ) (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
