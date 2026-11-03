@@ -40,7 +40,7 @@ class Host:
     async def transfer(self, cmd, words):
         self._set(cs=0)
         await ClockCycles(self.dut.clk, HALF)
-        for i in range(7, -1, -1):
+        for i in range(15, -1, -1):                      # 16-bit command: [15] read, [14:12] engine, [5:0] register
             await self._bit((cmd >> i) & 1)
         got = []
         for w in words:
@@ -54,10 +54,10 @@ class Host:
         return got
 
     async def write(self, eng, reg, *words):
-        await self.transfer((eng << 6) | reg, list(words))
+        await self.transfer((eng << 12) | reg, list(words))
 
     async def read(self, eng, reg, n=1):
-        return await self.transfer(0x80 | (eng << 6) | reg, [0] * n)
+        return await self.transfer(0x8000 | (eng << 12) | reg, [0] * n)
 
 
 @cocotb.test()

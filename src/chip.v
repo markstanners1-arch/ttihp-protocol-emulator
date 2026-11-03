@@ -1,10 +1,12 @@
-// The whole chip: SPI host port + two engines + their setting registers + pin wiring.
+// The whole chip: SPI host port + NENG engines (4 on the ASIC; the FPGA boards fit 2) + their setting registers + pin wiring.
 // Tiny Tapeout pin interface. Spec: docs/host_port.md (host side), docs/isa.md (engines).
 
 `timescale 1ns/1ps
 `default_nettype none
 
-module protocol_chip (
+module protocol_chip #(
+    parameter NENG = 4                  // engines, 1 to 8 (the host's engine field is 3 bits)
+) (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
@@ -14,9 +16,11 @@ module protocol_chip (
     input  wire       clk,
     input  wire       rst_n
 );
+    localparam [3:0] NENG4 = NENG;      // for the ID register
 
     // ------------------------------------------------------------ host port
-    wire        h_wr, h_rd, h_pop, h_eng, miso;
+    wire        h_wr, h_rd, h_pop, miso;
+    wire [2:0]  h_eng;
     wire [5:0]  h_addr;
     wire [15:0] h_wdata;
     reg  [15:0] h_rdata;
@@ -27,39 +31,41 @@ module protocol_chip (
         .wr(h_wr), .rd(h_rd), .pop(h_pop), .eng(h_eng), .addr(h_addr),
         .wdata(h_wdata), .rdata(h_rdata));
 
+    wire eng_ok = (h_eng < NENG);       // an engine number past the last: writes ignored, reads 0
+
     // ------------------------------------------------------------ setting registers, one set per engine
-    reg        run      [0:1];
-    reg [15:0] r_clkdiv [0:1];
-    reg [14:0] r_wrap   [0:1];
-    reg [14:0] r_outcfg [0:1];
-    reg [13:0] r_misc   [0:1];
-    reg [14:0] r_incfg  [0:1];
+    reg        run      [0:NENG-1];
+    reg [15:0] r_clkdiv [0:NENG-1];
+    reg [14:0] r_wrap   [0:NENG-1];
+    reg [14:0] r_outcfg [0:NENG-1];
+    reg [13:0] r_misc   [0:NENG-1];
+    reg [14:0] r_incfg  [0:NENG-1];
     reg [7:0]  r_filter;            // chip-wide input glitch filter: [3:0] N, [7:4] P (docs/input_filter.md)
 
     integer k;
     always @(posedge clk) begin
         if (!rst_n) begin
-            for (k = 0; k < 2; k = k + 1) begin
+            for (k = 0; k < NENG; k = k + 1) begin
                 run[k] <= 1'b0; r_clkdiv[k] <= 0; r_wrap[k] <= 0; r_outcfg[k] <= 0; r_misc[k] <= 0; r_incfg[k] <= 0;
             end
             r_filter <= 8'd0;
         end else if (h_wr) begin
-            case (h_addr)
+            if (h_addr == 6'h29) r_filter <= h_wdata[7:0];           // chip-wide, whatever the engine field says
+            else if (eng_ok) case (h_addr)
                 6'h20: run[h_eng]      <= h_wdata[0];
                 6'h21: r_clkdiv[h_eng] <= h_wdata;
                 6'h22: r_wrap[h_eng]   <= h_wdata[14:0];
                 6'h23: r_outcfg[h_eng] <= h_wdata[14:0];
                 6'h24: r_misc[h_eng]   <= h_wdata[13:0];
                 6'h25: r_incfg[h_eng]  <= h_wdata[14:0];
-                6'h29: r_filter        <= h_wdata[7:0];
                 default: ;
             endcase
         end
     end
 
     // ------------------------------------------------------------ pins as the engines see them (32 numbers)
-    wire [31:0] e_out_val [0:1];
-    wire [31:0] e_out_dir [0:1];
+    wire [31:0] e_out_val [0:NENG-1];
+    wire [31:0] e_out_dir [0:NENG-1];
     // every engine input: 2 flip-flop synchroniser, then the glitch filter (one shared setting)
     reg  [12:0] in_s1, in_s2;
     always @(posedge clk) begin
@@ -71,14 +77,14 @@ module protocol_chip (
                                       .in(in_s2), .out(in_f));
     wire [31:0] pins_in = {12'd0, in_f[12:8], 7'd0, in_f[7:0]};   // 0-7 uio, 15-19 ui_in[3..7]
 
-    // ------------------------------------------------------------ the two engines
-    wire [15:0] pop_data [0:1];
-    wire [2:0]  txl [0:1], rxl [0:1];
-    wire [4:0]  e_pc [0:1];
+    // ------------------------------------------------------------ the engines
+    wire [15:0] pop_data [0:NENG-1];
+    wire [2:0]  txl [0:NENG-1], rxl [0:NENG-1];
+    wire [4:0]  e_pc [0:NENG-1];
 
     genvar g;
     generate
-        for (g = 0; g < 2; g = g + 1) begin : eng
+        for (g = 0; g < NENG; g = g + 1) begin : eng
             wire sel = (h_eng == g);
             wire [15:0] x_, y_, osr_, isr_, sw_;
             wire [4:0]  oc_, ic_, dl_;
@@ -104,28 +110,42 @@ module protocol_chip (
     endgenerate
 
     // ------------------------------------------------------------ host reads
+    reg [15:0] eng_rdata;               // the selected engine's registers (only used when eng_ok)
     always @(*) begin
         case (h_addr)
-            6'h20: h_rdata = {15'd0, run[h_eng]};
-            6'h21: h_rdata = r_clkdiv[h_eng];
-            6'h22: h_rdata = {1'b0, r_wrap[h_eng]};
-            6'h23: h_rdata = {1'b0, r_outcfg[h_eng]};
-            6'h24: h_rdata = {2'b0, r_misc[h_eng]};
-            6'h25: h_rdata = {1'b0, r_incfg[h_eng]};
-            6'h27: h_rdata = (rxl[h_eng] != 0) ? pop_data[h_eng] : 16'd0;
-            6'h28: h_rdata = {2'b0, e_pc[h_eng], run[h_eng], 1'b0, rxl[h_eng], 1'b0, txl[h_eng]};
-            6'h29: h_rdata = {8'd0, r_filter};
-            default: h_rdata = 16'd0;
+            6'h20: eng_rdata = {15'd0, run[h_eng]};
+            6'h21: eng_rdata = r_clkdiv[h_eng];
+            6'h22: eng_rdata = {1'b0, r_wrap[h_eng]};
+            6'h23: eng_rdata = {1'b0, r_outcfg[h_eng]};
+            6'h24: eng_rdata = {2'b0, r_misc[h_eng]};
+            6'h25: eng_rdata = {1'b0, r_incfg[h_eng]};
+            6'h27: eng_rdata = (rxl[h_eng] != 0) ? pop_data[h_eng] : 16'd0;
+            6'h28: eng_rdata = {2'b0, e_pc[h_eng], run[h_eng], 1'b0, rxl[h_eng], 1'b0, txl[h_eng]};
+            default: eng_rdata = 16'd0;
+        endcase
+        case (h_addr)
+            6'h29:   h_rdata = {8'd0, r_filter};                      // chip-wide
+            6'h2A:   h_rdata = {8'd0, 4'd2, NENG4};                   // ID: [7:4] spec version 2, [3:0] engines
+            default: h_rdata = eng_ok ? eng_rdata : 16'd0;
         endcase
     end
 
-    // ------------------------------------------------------------ engine pins to chip pins (engine A wins)
-    wire [31:0] drv = e_out_dir[0] | e_out_dir[1];
-    wire [31:0] val = (e_out_dir[0] & e_out_val[0]) | (~e_out_dir[0] & e_out_val[1]);
+    // ------------------------------------------------------------ engine pins to chip pins (the lowest engine driving a pin wins)
+    reg [31:0] drv, val;
+    reg        any_rx;                  // IRQ: some engine's RX FIFO holds data
+    integer m;
+    always @(*) begin
+        drv = 32'd0; val = 32'd0; any_rx = 1'b0;
+        for (m = NENG - 1; m >= 0; m = m - 1) begin          // highest first, so the lowest has the last word
+            drv    = drv | e_out_dir[m];
+            val    = (e_out_dir[m] & e_out_val[m]) | (~e_out_dir[m] & val);
+            any_rx = any_rx | (rxl[m] != 0);
+        end
+    end
 
     assign uio_oe  = drv[7:0];
     assign uio_out = val[7:0] & drv[7:0];
-    assign uo_out  = {val[13:8] & drv[13:8], (rxl[0] != 0) || (rxl[1] != 0), miso};
+    assign uo_out  = {val[13:8] & drv[13:8], any_rx, miso};
 
     wire _unused = &{ena, h_rd, ui_in[0], 1'b0};
 

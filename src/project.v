@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Mark Stanners
  * SPDX-License-Identifier: Apache-2.0
  *
- * Protocol emulator: two small programmable engines that run UART/SPI/I2C (and more) as firmware,
+ * Protocol emulator: four small programmable engines that run UART/SPI/I2C (and more) as firmware,
  * loaded and driven over an SPI host port. Full design, models and tests:
  * the ProtocolASIC repository (docs/core_design.md, docs/isa.md, docs/host_port.md).
  */
