@@ -19,7 +19,7 @@ module tt_um_gosforth_protocol_emu (
     input  wire       clk,
     input  wire       rst_n
 );
-    protocol_chip chip (
+    protocol_chip #(.NENG(3)) chip (        // MEASUREMENT RUN 3 Nov 2026: four engines (61 % of the core) failed placement twice; how does three place?
         .ui_in(ui_in), .uo_out(uo_out), .uio_in(uio_in), .uio_out(uio_out), .uio_oe(uio_oe),
         .ena(ena), .clk(clk), .rst_n(rst_n));
 endmodule
