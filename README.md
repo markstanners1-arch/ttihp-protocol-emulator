@@ -1,42 +1,34 @@
 ![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
 
-# Tiny Tapeout Verilog Project Template
+# Protocol emulator
 
-- [Read the documentation for project](docs/info.md)
+Three small programmable engines behind an SPI host port, for Tiny Tapeout on IHP SG13 CMOS5L (6x4 tiles, 50 MHz).
+Each engine runs its own 32-instruction program, one instruction per tick of its own clock divider, on the chip's 19
+protocol pins. UART, SPI, I2C, NEC infrared and DALI are programs, not fixed hardware, and the same engines measure
+the wire with a stopwatch instruction and a programmable input glitch filter. A host microcontroller loads the programs
+and exchanges data through the SPI port. Top module: `tt_um_gosforth_protocol_emu`.
 
-## What is Tiny Tapeout?
+- Datasheet: [docs/info.md](docs/info.md) (instruction set, host port registers, pinout, test results, layout figures)
+- Design repository: [github.com/markstanners1-arch/protocol-asic](https://github.com/markstanners1-arch/protocol-asic)
+  (Python reference model, random side-by-side tests, whole-chip test, engine programs, FPGA builds, bench records).
+  `src/` here is a copy of its `src/`.
+- Layout viewer: [markstanners1-arch.github.io/ttihp-protocol-emulator](https://markstanners1-arch.github.io/ttihp-protocol-emulator/)
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+## Run the test
 
-To learn more and get started, visit https://tinytapeout.com.
+The cocotb test drives the chip only through its pins: it writes and reads back a setting, loads engine A with the
+UART transmit program, sends a byte and decodes it from the pin, and checks the chip-wide filter register. It needs
+Icarus Verilog and Python.
 
-## Set up your Verilog project
+```sh
+cd test
+pip install -r requirements.txt
+make -B
+```
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+The gate-level version (`make -B GATES=yes`) runs on the hardened netlist; see [test/README.md](test/README.md).
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+## About Tiny Tapeout
 
-## Enable GitHub actions to build the results page
-
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
-
-## Resources
-
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
-
-## What next?
-
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+Tiny Tapeout makes it cheaper and easier to get digital and analog designs made on a real chip:
+[tinytapeout.com](https://tinytapeout.com).
