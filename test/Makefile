@@ -6,7 +6,7 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v chip.v host_spi.v engine.v prog_mem.v glitch_filter.v
+PROJECT_SOURCES = project.v chip.v host_spi.v engine.v prog_mem.v glitch_filter.v sram_64x16.v
 
 ifneq ($(GATES),yes)
 
@@ -32,11 +32,15 @@ VERILOG_SOURCES += $(PDK_LIBS_REF)/$(PDK_CELL_PREFIX)_stdcell/verilog/$(PDK_CELL
 
 # this gets copied in by the GDS action workflow
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
+# the netlist keeps the SRAM macro as a black box: its behavioural model comes from here
+VERILOG_SOURCES += $(SRC_DIR)/sram_64x16.v
 
 endif
 
 # Allow sharing configuration between design and testbench via `include`:
 COMPILE_ARGS 		+= -I$(SRC_DIR)
+# the IHP SRAM macro as program store (prog_mem.v), and its behavioural model (sram_64x16.v)
+COMPILE_ARGS 		+= -DUSE_SRAM -DCOCOTB_SIM
 
 # Include the testbench sources:
 VERILOG_SOURCES += $(PWD)/tb.v
