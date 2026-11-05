@@ -1,15 +1,20 @@
-// One protocol engine, built from docs/isa.md (v0.1).
+// One protocol engine, built from docs/isa.md (v0.3).
 // Checked against the Python model (model/engine.py) every system clock by model/cosim.py.
 //
 // In 74-series terms: a 16-bit clock divider, a 5-bit program counter, two 16-bit
 // loadable down-counters (X, Y), two 16-bit shift registers (OSR out, ISR in) with bit counters,
-// a 5-bit delay counter, a 16-bit stopwatch, two 4-word FIFOs, a 2-flip-flop synchroniser
-// on every input, and a 32 x 16 program memory. One instruction per engine tick.
+// a 5-bit delay counter, a 16-bit stopwatch, a TX FIFO (TXDEPTH words) and a 4-word RX FIFO, a 2-flip-flop
+// synchroniser on every input, a 32 x 16 program memory, a 32-bit CRC unit (src/crc32.v), and with SER = 1 the
+// bit-cell serialiser (src/serialiser.v) that owns out_base while it sends. One instruction per engine tick.
 
 `timescale 1ns/1ps
 `default_nettype none
 
-module engine (
+module engine #(
+    parameter SER     = 0,              // 1: this engine has the serialiser (engine 0)
+    parameter TXDEPTH = 4,              // TX FIFO depth, a power of two (64 with the serialiser)
+    parameter CRC     = 1               // 1: the CRC unit is built; 0: crc reads 0 (IN source 7 reads zeros, TIME 5 does nothing)
+) (
     input  wire        clk,
     input  wire        rst_n,
 
@@ -31,6 +36,11 @@ module engine (
     input  wire        cfg_out_right,
     input  wire        cfg_in_right,
     input  wire [4:0]  cfg_fault_addr,
+    input  wire [12:0] cfg_sercfg,        // SERCFG: [0] en, [1] Manchester, [2] differential, [3] end marker, [4] CRC append,
+                                          //         [5] complement, [6] CRC watches SER, [12:10] CRC skip words (SER = 1 only)
+    input  wire [15:0] cfg_serdiv,        // half-bit period minus 1 (SER = 1 only)
+    input  wire [31:0] cfg_crcpoly,
+    input  wire [31:0] cfg_crcinit,
 
     // program memory write port
     input  wire        imem_we,
@@ -42,13 +52,18 @@ module engine (
     input  wire [15:0] host_push_data,
     input  wire        host_pop,
     output wire [15:0] host_pop_data,     // head of the RX FIFO
-    output wire [2:0]  tx_level,
+    output wire [6:0]  tx_level,
     output wire [2:0]  rx_level,
 
     // pins
     input  wire [31:0] pins_in,
-    output reg  [31:0] out_val,
+    output wire [31:0] out_val,           // the levels on the pins (the serialiser's on its pins while it sends)
     output reg  [31:0] out_dir,
+
+    // serialiser and CRC unit, for the host registers
+    output wire        ser_busy,
+    output wire        ser_under,
+    output wire [31:0] crc,
 
     // engine state, visible for testing
     output reg  [4:0]  pc,
@@ -104,18 +119,68 @@ module engine (
     reg [15:0] div;                 // clock divider
     wire       tick = (div == 16'd0);
 
-    reg [15:0] txm [0:3];           // TX FIFO: host -> engine
-    reg [1:0]  tx_rd, tx_wr;
-    reg [2:0]  tx_cnt;
+    // TX FIFO address width = clog2(TXDEPTH), written out because Xilinx XST 14.7 rejects $clog2 in a localparam
+    localparam TAW = (TXDEPTH <= 2) ? 1 : (TXDEPTH <= 4) ? 2 : (TXDEPTH <= 8) ? 3 : (TXDEPTH <= 16) ? 4 :
+                     (TXDEPTH <= 32) ? 5 : (TXDEPTH <= 64) ? 6 : 7;
+    reg [15:0] txm [0:TXDEPTH-1];   // TX FIFO: host -> engine (and the serialiser)
+    reg [TAW-1:0] tx_rd, tx_wr;
+    reg [TAW:0]   tx_cnt;
     reg [15:0] rxm [0:3];           // RX FIFO: engine -> host
     reg [1:0]  rx_rd, rx_wr;
     reg [2:0]  rx_cnt;
+    reg [31:0] oval;                // the program's pin levels (OUT, SET, MOV pins, side-set)
 
-    assign tx_level      = tx_cnt;
+    wire   tx_full       = (tx_cnt == TXDEPTH);
+    wire   tx_empty      = (tx_cnt == {(TAW+1){1'b0}});
+    assign tx_level      = {{(6-TAW){1'b0}}, tx_cnt};
     assign rx_level      = rx_cnt;
     assign host_pop_data = rxm[rx_rd];
-    wire   host_push_ok  = host_push && (tx_cnt != 3'd4);
+    wire   host_push_ok  = host_push && !tx_full;
     wire   host_pop_ok   = host_pop  && (rx_cnt != 3'd0);
+    wire [3:0] tx_sat4   = (tx_level > 7'd15) ? 4'd15 : tx_level[3:0];   // MOV status: the level, saturating at 15
+
+    // ---- the serialiser (SER = 1) and the CRC unit
+    reg         ser_start;          // MOV ser this clock
+    reg  [15:0] ser_count;
+    reg         crc_clr_time;       // TIME 5 this clock
+    reg         in_step;            // an IN this clock: the CRC unit (IN mode) takes its first bit
+    reg         in_bit;
+    wire        ser_pop, ser_crc_clr, ser_crc_step, ser_crc_bit, ser_own, ser_line;
+    wire        crc_ser_mode = SER ? cfg_sercfg[6] : 1'b0;
+    generate if (SER) begin : with_ser
+        serialiser u_ser (
+            .clk(clk), .rst_n(rst_n),
+            .cfg_en(cfg_sercfg[0]), .cfg_manch(cfg_sercfg[1]), .cfg_endm(cfg_sercfg[3]), .cfg_crcap(cfg_sercfg[4]),
+            .cfg_crccpl(cfg_sercfg[5]), .cfg_skip(cfg_sercfg[12:10]), .cfg_serdiv(cfg_serdiv), .cfg_out_right(cfg_out_right),
+            .start(ser_start), .start_count(ser_count),
+            .tx_cnt(tx_level), .tx_full(tx_full), .tx_head(txm[tx_rd]), .tx_pop(ser_pop),
+            .crc(crc), .crc_clr(ser_crc_clr), .crc_step(ser_crc_step), .crc_bit(ser_crc_bit),
+            .busy(ser_busy), .under(ser_under), .own(ser_own), .line(ser_line));
+        // the serialiser's pins: out_base, and out_base + 1 with the inverse in differential mode
+        wire [31:0] m0 = 32'd1 << cfg_out_base;
+        wire [31:0] m1 = 32'd1 << (cfg_out_base + 5'd1);
+        wire [31:0] with0 = (oval & ~m0) | (ser_line ? m0 : 32'd0);
+        wire [31:0] with1 = cfg_sercfg[2] ? ((with0 & ~m1) | (ser_line ? 32'd0 : m1)) : with0;
+        assign out_val = ser_own ? with1 : oval;
+    end else begin : no_ser
+        assign ser_pop = 1'b0; assign ser_crc_clr = 1'b0; assign ser_crc_step = 1'b0; assign ser_crc_bit = 1'b0;
+        assign ser_own = 1'b0; assign ser_line = 1'b0; assign ser_busy = 1'b0; assign ser_under = 1'b0;
+        assign out_val = oval;
+        wire _unused_ser = &{ser_start, ser_count, cfg_sercfg, cfg_serdiv, 1'b0};
+    end endgenerate
+    generate if (CRC) begin : with_crc
+        crc32 u_crc (
+            .clk(clk), .rst_n(rst_n), .poly(cfg_crcpoly), .init(cfg_crcinit),
+            .clr(crc_clr_time | ser_crc_clr),
+            .step(crc_ser_mode ? ser_crc_step : in_step), .bit_in(crc_ser_mode ? ser_crc_bit : in_bit),
+            .crc(crc));
+    end else begin : no_crc
+        assign crc = 32'd0;
+        wire _unused_crc = &{cfg_crcpoly, cfg_crcinit, crc_clr_time, ser_crc_clr, crc_ser_mode, ser_crc_step, in_step,
+                             ser_crc_bit, in_bit, 1'b0};
+    end endgenerate
+    // what WAIT sees: the pins, except index 24 on the serialiser's engine = busy
+    wire [31:0] wait_src = SER ? {sync2[31:25], ser_busy, sync2[23:0]} : sync2;
 
     // ------------------------------------------------------------------ working values for one step
     // (combinational: every one is assigned at the top of the always @(*) block)
@@ -155,8 +220,9 @@ module engine (
         n_osr = osr; n_osr_count = osr_count;
         n_isr = isr; n_isr_count = isr_count;
         n_delay = delay; n_sw = sw; n_sw_run = sw_run;
-        n_out_val = out_val; n_out_dir = out_dir;
+        n_out_val = oval; n_out_dir = out_dir;
         tx_pop_eng = 0; rx_push_eng = 0; rx_push_data = 0;
+        ser_start = 0; ser_count = 0; crc_clr_time = 0; in_step = 0; in_bit = 0;
         instr = imem_rdata;     // the word at pc, read on the last clock
         op = instr[15:13]; mid = instr[12:8]; a = instr[7:0];
         dbits = 3'd5 - {1'b0, cfg_side_count} - {2'b0, cfg_side_opt};
@@ -184,9 +250,11 @@ module engine (
             3'd4: in_data = isr;
             3'd5: in_data = osr;
             3'd6: in_data = (tick && sw_run && sw != 16'hFFFF) ? sw + 16'd1 : sw;   // = n_sw
+            3'd7: in_data = crc[15:0];
             default: in_data = 16'd0;
         endcase
         in_data = in_data & msk;
+        in_bit = cfg_in_right ? in_data[0] : in_data[n - 5'd1];   // the first bit shifted in
         if (op == 3'd2) begin
             sh_in  = cfg_in_right ? {in_data, isr} : {isr, 16'd0};
             sh_amt = cfg_in_right ? n : 5'd16 - n;
@@ -218,7 +286,7 @@ module engine (
                 end
                 3'd1: begin                                         // WAIT
                     pidx = a[5] ? (cfg_in_base + a[4:0]) : a[4:0];
-                    if (sync2[pidx] != a[7]) begin
+                    if (wait_src[pidx] != a[7]) begin
                         if (a[6] && y == 16'd0) begin
                             do_jump = 1'b1; jaddr = cfg_fault_addr;
                         end else begin
@@ -228,6 +296,7 @@ module engine (
                     end
                 end
                 3'd2: begin                                         // IN
+                    in_step = 1'b1;
                     n_isr = cfg_in_right ? sh_out[15:0] : (sh_out[15:0] | in_data);
                     sum6 = {1'b0, isr_count} + {1'b0, n};
                     n_isr_count = (sum6 > 6'd16) ? 5'd16 : sum6[4:0];
@@ -258,7 +327,7 @@ module engine (
                         end
                     end else begin
                         if (a[6] && osr_count < 5'd16) begin
-                        end else if (tx_cnt == 3'd0) begin
+                        end else if (tx_empty || ser_busy) begin    // while the serialiser is busy the FIFO is its own
                             if (a[5]) stall = 1'b1;
                             else begin n_osr = x; n_osr_count = 0; end
                         end else begin
@@ -274,7 +343,7 @@ module engine (
                         3'd2: v = y;
                         3'd3: v = 16'd0;
                         3'd4: v = n_sw;
-                        3'd5: v = {8'd0, 1'b0, rx_cnt, 1'b0, tx_cnt};
+                        3'd5: v = {6'd0, ser_under, ser_busy, 1'b0, rx_cnt, tx_sat4};
                         3'd6: v = isr;
                         default: v = osr;
                     endcase
@@ -284,6 +353,7 @@ module engine (
                         3'd0: begin pw_en = 1'b1; pw_base = cfg_out_base; pw_count = cfg_out_count; pw_data = v; end
                         3'd1: n_x = v;
                         3'd2: n_y = v;
+                        3'd3: begin ser_start = 1'b1; ser_count = v; end          // mov ser (engine 0 only)
                         3'd5: begin do_jump = 1'b1; jaddr = v[4:0]; end
                         3'd6: begin n_isr = v; n_isr_count = 0; end
                         3'd7: begin n_osr = v; n_osr_count = 0; end
@@ -306,6 +376,7 @@ module engine (
                         3'd2: n_x = n_sw;
                         3'd3: n_y = n_sw;
                         3'd4: begin n_isr = n_sw; n_isr_count = 5'd16; end
+                        3'd5: crc_clr_time = 1'b1;                              // time crc reset
                         default: ;
                     endcase
                 end
@@ -314,7 +385,7 @@ module engine (
                 // the one shared pin writer
                 pw_m = rotl32((32'd1 << pw_count) - 32'd1, pw_base);
                 pw_d = rotl32({16'd0, pw_data}, pw_base);
-                if (pw_en && !pw_dir) n_out_val = (out_val & ~pw_m) | (pw_d & pw_m);
+                if (pw_en && !pw_dir) n_out_val = (oval & ~pw_m) | (pw_d & pw_m);
                 if (pw_en &&  pw_dir) n_out_dir = (out_dir & ~pw_m) | (pw_d & pw_m);
 
                 // side-set: on every executed step, stalled or not; wins over the instruction
@@ -339,7 +410,7 @@ module engine (
             osr <= 0; osr_count <= 5'd16;
             isr <= 0; isr_count <= 0;
             delay <= 0; sw <= 0; sw_run <= 0;
-            out_val <= 0; out_dir <= 0;
+            oval <= 0; out_dir <= 0;
             div <= 0; sync1 <= 0; sync2 <= 0;
             tx_rd <= 0; tx_wr <= 0; tx_cnt <= 0;
             rx_rd <= 0; rx_wr <= 0; rx_cnt <= 0;
@@ -349,14 +420,14 @@ module engine (
             osr <= n_osr; osr_count <= n_osr_count;
             isr <= n_isr; isr_count <= n_isr_count;
             delay <= n_delay; sw <= n_sw; sw_run <= n_sw_run;
-            out_val <= n_out_val; out_dir <= n_out_dir;
+            oval <= n_out_val; out_dir <= n_out_dir;
             div <= tick ? cfg_clkdiv : div - 16'd1;
             sync2 <= sync1; sync1 <= pins_in;
 
             // ---- FIFOs (host and engine can act in the same clock)
-            if (host_push_ok) begin txm[tx_wr] <= host_push_data; tx_wr <= tx_wr + 2'd1; end
-            if (tx_pop_eng)   tx_rd <= tx_rd + 2'd1;
-            tx_cnt <= tx_cnt + {2'b0, host_push_ok} - {2'b0, tx_pop_eng};
+            if (host_push_ok) begin txm[tx_wr] <= host_push_data; tx_wr <= tx_wr + 1'b1; end
+            if (tx_pop_eng || ser_pop) tx_rd <= tx_rd + 1'b1;
+            tx_cnt <= tx_cnt + {{TAW{1'b0}}, host_push_ok} - {{TAW{1'b0}}, (tx_pop_eng | ser_pop)};
             if (rx_push_eng)  begin rxm[rx_wr] <= rx_push_data; rx_wr <= rx_wr + 2'd1; end
             if (host_pop_ok)  rx_rd <= rx_rd + 2'd1;
             rx_cnt <= rx_cnt + {2'b0, rx_push_eng} - {2'b0, host_pop_ok};

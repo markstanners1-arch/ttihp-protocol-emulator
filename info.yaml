@@ -19,6 +19,9 @@ project:
   source_files:
     - "project.v"
     - "chip.v"
+    - "cluster.v"
+    - "serialiser.v"
+    - "crc32.v"
     - "host_spi.v"
     - "engine.v"
     - "prog_mem.v"

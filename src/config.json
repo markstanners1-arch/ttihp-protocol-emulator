@@ -70,10 +70,10 @@
         "nom_slow_1p08V_125C": ["pdk_dir::libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_64x16_c2_slow_1p08V_125C.lib"]
       },
       "instances": {
-        "chip.eng[0].e.imem.sram": {"location": [3.36, 3.78], "orientation": "FS"},
-        "chip.eng[1].e.imem.sram": {"location": [273.12, 3.78], "orientation": "FS"},
-        "chip.eng[2].e.imem.sram": {"location": [542.88, 3.78], "orientation": "FS"},
-        "chip.eng[3].e.imem.sram": {"location": [812.64, 3.78], "orientation": "FS"}
+        "chip.clu[0].u.eng_slot[0].e.imem.sram": {"location": [3.36, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[1].e.imem.sram": {"location": [273.12, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[2].e.imem.sram": {"location": [542.88, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[3].e.imem.sram": {"location": [812.64, 3.78], "orientation": "FS"}
       }
     }
   },
