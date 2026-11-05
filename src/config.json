@@ -14,8 +14,6 @@
   "PL_TARGET_DENSITY_PCT": 60,
   "//": "40 MHz: a 10 Mbit Manchester half-bit is then exactly two clocks.",
   "CLOCK_PERIOD": 25,
-  "//": "Resource sharing off: run 4b (42023260450) sat in the yosys share pass for over two hours on this design.",
-  "SYNTH_SHARE_RESOURCES": false,
   "PL_RESIZER_HOLD_SLACK_MARGIN": 0.1,
   "GRT_RESIZER_HOLD_SLACK_MARGIN": 0.05,
   "RUN_LINTER": 1,
