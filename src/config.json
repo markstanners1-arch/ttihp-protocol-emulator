@@ -78,14 +78,14 @@
     }
   },
   "PDN_MACRO_CONNECTIONS": [
-    "chip\\.eng\\\\?\\[0\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
-    "chip\\.eng\\\\?\\[0\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
-    "chip\\.eng\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
-    "chip\\.eng\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
-    "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
-    "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
-    "chip\\.eng\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
-    "chip\\.eng\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!"
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[0\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[0\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!"
   ],
   "//": "Routing kept off the macro footprints on the tile's routing layers: from the die edge (y 0, so no wire runs under a macro) and 2 um past each side, stopping 2.6 um short of the pin face at the top (y 68.14).",
   "ROUTING_OBSTRUCTIONS": [
