@@ -5,11 +5,12 @@
 // CRC, and an encoder mux (NRZ, or Manchester: first half the inverse of the bit, second half the bit). It is started by
 // MOV ser (start, start_count words; 0 stops it), waits until the FIFO holds the whole count (or is full), pulls the
 // words itself one per 16 bit-times, then optionally the CRC register (32 bits, optionally complemented, same bit order)
-// and the end marker (the line high for 6 half-bits), then goes idle. If the FIFO is empty when the next word is due the
+// and the end marker (the line high for 6 half-bits), then goes idle. If the FIFO has no head word ready when the next word is due the
 // line goes idle at once and `under` is set until the next start. While `own` is high the engine puts `line` on
 // out_base (and its inverse on out_base + 1 in differential mode) instead of the program's level.
 //
-// Timing: each half-bit is serdiv + 1 clocks. FIFO decisions use the level at the start of the clock (tx_cnt, tx_full).
+// Timing: each half-bit is serdiv + 1 clocks. FIFO decisions use the state at the start of the clock (tx_cnt, tx_full,
+// tx_ready).
 
 `timescale 1ns/1ps
 `default_nettype none
@@ -32,6 +33,7 @@ module serialiser (
     // the TX FIFO
     input  wire [6:0]  tx_cnt,
     input  wire        tx_full,
+    input  wire        tx_ready,      // the head word is ready (engine 0: see docs/isa.md, Host and FIFO timing)
     input  wire [15:0] tx_head,
     output reg         tx_pop,
     // the CRC unit
@@ -81,7 +83,7 @@ module serialiser (
                 end
             end else if (busy) begin
                 if (phase == FILL) begin                            // waiting for the whole frame to be in the FIFO
-                    if ({9'd0, tx_cnt} >= words || tx_full) do_load = 1'b1;
+                    if (({9'd0, tx_cnt} >= words || tx_full) && tx_ready) do_load = 1'b1;
                 end else if (divc != 16'd0) begin                   // inside a half-bit
                     n_divc = divc - 16'd1;
                 end else begin                                      // a half-bit boundary
@@ -98,7 +100,7 @@ module serialiser (
                                 n_bitn = bitn + 5'd1; n_sh = next_sh;
                                 crc_step = !wskip; crc_bit = next_bit;
                             end else if (words != 16'd0) begin      // the word is done: the next one
-                                if (tx_cnt != 7'd0) do_load = 1'b1;
+                                if (tx_ready) do_load = 1'b1;
                                 else begin n_busy = 1'b0; n_under = 1'b1; end
                             end else if (cfg_crcap) begin
                                 n_phase = CRC; n_bitn = 5'd0;

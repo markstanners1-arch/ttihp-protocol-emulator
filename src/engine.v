@@ -3,7 +3,8 @@
 //
 // In 74-series terms: a 16-bit clock divider, a 5-bit program counter, two 16-bit
 // loadable down-counters (X, Y), two 16-bit shift registers (OSR out, ISR in) with bit counters,
-// a 5-bit delay counter, a 16-bit stopwatch, a TX FIFO (TXDEPTH words) and a 4-word RX FIFO, a 2-flip-flop
+// a 5-bit delay counter, a 16-bit stopwatch, a TX FIFO (TXDEPTH words; at 64 a one-port
+// memory, src/fifo_mem.v, behind a head register) and a 4-word RX FIFO, a 2-flip-flop
 // synchroniser on every input, a 32 x 16 program memory, a 32-bit CRC unit (src/crc32.v), and with SER = 1 the
 // bit-cell serialiser (src/serialiser.v) that owns out_base while it sends. One instruction per engine tick.
 
@@ -122,21 +123,68 @@ module engine #(
     // TX FIFO address width = clog2(TXDEPTH), written out because Xilinx XST 14.7 rejects $clog2 in a localparam
     localparam TAW = (TXDEPTH <= 2) ? 1 : (TXDEPTH <= 4) ? 2 : (TXDEPTH <= 8) ? 3 : (TXDEPTH <= 16) ? 4 :
                      (TXDEPTH <= 32) ? 5 : (TXDEPTH <= 64) ? 6 : 7;
-    reg [15:0] txm [0:TXDEPTH-1];   // TX FIFO: host -> engine (and the serialiser)
+    // TX FIFO: host -> engine (and the serialiser). tx_cnt counts every word in it; tx_head is the word PULL and the
+    // serialiser take, valid while tx_ready (docs/isa.md, "Host and FIFO timing").
     reg [TAW-1:0] tx_rd, tx_wr;
     reg [TAW:0]   tx_cnt;
+    wire [15:0] tx_head;
+    wire        tx_ready;
     reg [15:0] rxm [0:3];           // RX FIFO: engine -> host
     reg [1:0]  rx_rd, rx_wr;
     reg [2:0]  rx_cnt;
     reg [31:0] oval;                // the program's pin levels (OUT, SET, MOV pins, side-set)
+    reg        tx_pop_eng;          // PULL takes the head this clock (from the logic below)
+    wire       ser_pop;             // the serialiser takes the head this clock
 
     wire   tx_full       = (tx_cnt == TXDEPTH);
-    wire   tx_empty      = (tx_cnt == {(TAW+1){1'b0}});
     assign tx_level      = {{(6-TAW){1'b0}}, tx_cnt};
     assign rx_level      = rx_cnt;
     assign host_pop_data = rxm[rx_rd];
     wire   host_push_ok  = host_push && !tx_full;
     wire   host_pop_ok   = host_pop  && (rx_cnt != 3'd0);
+    wire   tx_pop        = tx_pop_eng | ser_pop;
+
+    generate if (TXDEPTH == 64) begin : tx_mem
+        // One-port memory (src/fifo_mem.v: flip-flops, or the IHP block with USE_SRAM) behind a head register.
+        // A host push writes the memory. On a clock with no push, if the head is empty or taken this clock and the
+        // memory holds a word not yet read, that word is read: it is the head from the next clock. tx_hv = head valid.
+        // The head is captured into hold on the clock after a read, so it never relies on the memory output holding.
+        reg         tx_hv, rd_last;
+        reg  [15:0] hold;
+        wire [15:0] mq;
+        wire [TAW:0] unread = tx_cnt - {{TAW{1'b0}}, tx_hv};
+        wire        we = rst_n && host_push_ok;
+        wire        re = rst_n && !host_push_ok && (!tx_hv || tx_pop) && (unread != {(TAW+1){1'b0}});
+        fifo_mem txmem (.clk(clk), .we(we), .re(re), .addr(we ? tx_wr : tx_rd), .wdata(host_push_data), .rdata(mq));
+        assign tx_head  = rd_last ? mq : hold;
+        assign tx_ready = tx_hv;
+        always @(posedge clk) begin
+            if (!rst_n) begin
+                tx_rd <= 0; tx_wr <= 0; tx_cnt <= 0; tx_hv <= 1'b0; rd_last <= 1'b0;
+            end else begin
+                if (we) tx_wr <= tx_wr + 1'b1;
+                if (re) tx_rd <= tx_rd + 1'b1;
+                tx_cnt  <= tx_cnt + {{TAW{1'b0}}, we} - {{TAW{1'b0}}, tx_pop};
+                tx_hv   <= re ? 1'b1 : (tx_pop ? 1'b0 : tx_hv);
+                rd_last <= re;
+            end
+            if (rd_last) hold <= mq;
+        end
+    end else begin : tx_ff
+        // Flip-flop FIFO: a pushed word is visible from the next clock.
+        reg [15:0] txm [0:TXDEPTH-1];
+        assign tx_head  = txm[tx_rd];
+        assign tx_ready = (tx_cnt != {(TAW+1){1'b0}});
+        always @(posedge clk) begin
+            if (!rst_n) begin
+                tx_rd <= 0; tx_wr <= 0; tx_cnt <= 0;
+            end else begin
+                if (host_push_ok) begin txm[tx_wr] <= host_push_data; tx_wr <= tx_wr + 1'b1; end
+                if (tx_pop) tx_rd <= tx_rd + 1'b1;
+                tx_cnt <= tx_cnt + {{TAW{1'b0}}, host_push_ok} - {{TAW{1'b0}}, tx_pop};
+            end
+        end
+    end endgenerate
     wire [3:0] tx_sat4   = (tx_level > 7'd15) ? 4'd15 : tx_level[3:0];   // MOV status: the level, saturating at 15
 
     // ---- the serialiser (SER = 1) and the CRC unit
@@ -145,7 +193,7 @@ module engine #(
     reg         crc_clr_time;       // TIME 5 this clock
     reg         in_step;            // an IN this clock: the CRC unit (IN mode) takes its first bit
     reg         in_bit;
-    wire        ser_pop, ser_crc_clr, ser_crc_step, ser_crc_bit, ser_own, ser_line;
+    wire        ser_crc_clr, ser_crc_step, ser_crc_bit, ser_own, ser_line;
     wire        crc_ser_mode = SER ? cfg_sercfg[6] : 1'b0;
     generate if (SER) begin : with_ser
         serialiser u_ser (
@@ -153,7 +201,7 @@ module engine #(
             .cfg_en(cfg_sercfg[0]), .cfg_manch(cfg_sercfg[1]), .cfg_endm(cfg_sercfg[3]), .cfg_crcap(cfg_sercfg[4]),
             .cfg_crccpl(cfg_sercfg[5]), .cfg_skip(cfg_sercfg[12:10]), .cfg_serdiv(cfg_serdiv), .cfg_out_right(cfg_out_right),
             .start(ser_start), .start_count(ser_count),
-            .tx_cnt(tx_level), .tx_full(tx_full), .tx_head(txm[tx_rd]), .tx_pop(ser_pop),
+            .tx_cnt(tx_level), .tx_full(tx_full), .tx_ready(tx_ready), .tx_head(tx_head), .tx_pop(ser_pop),
             .crc(crc), .crc_clr(ser_crc_clr), .crc_step(ser_crc_step), .crc_bit(ser_crc_bit),
             .busy(ser_busy), .under(ser_under), .own(ser_own), .line(ser_line));
         // the serialiser's pins: out_base, and out_base + 1 with the inverse in differential mode
@@ -205,7 +253,7 @@ module engine #(
     reg [4:0]  pw_base, pw_count;
     reg [15:0] pw_data;
     reg [31:0] pw_m, pw_d;
-    reg        tx_pop_eng, rx_push_eng;
+    reg        rx_push_eng;
     reg [15:0] rx_push_data;
     // next state
     reg [4:0]  n_osr_count, n_isr_count, n_delay;
@@ -327,12 +375,12 @@ module engine #(
                         end
                     end else begin
                         if (a[6] && osr_count < 5'd16) begin
-                        end else if (tx_empty || ser_busy) begin    // while the serialiser is busy the FIFO is its own
+                        end else if (!tx_ready || ser_busy) begin   // while the serialiser is busy the FIFO is its own
                             if (a[5]) stall = 1'b1;
                             else begin n_osr = x; n_osr_count = 0; end
                         end else begin
                             tx_pop_eng = 1'b1;
-                            n_osr = txm[tx_rd]; n_osr_count = 0;
+                            n_osr = tx_head; n_osr_count = 0;
                         end
                     end
                 end
@@ -412,7 +460,6 @@ module engine #(
             delay <= 0; sw <= 0; sw_run <= 0;
             oval <= 0; out_dir <= 0;
             div <= 0; sync1 <= 0; sync2 <= 0;
-            tx_rd <= 0; tx_wr <= 0; tx_cnt <= 0;
             rx_rd <= 0; rx_wr <= 0; rx_cnt <= 0;
         end else begin
             // ---- registers
@@ -424,10 +471,7 @@ module engine #(
             div <= tick ? cfg_clkdiv : div - 16'd1;
             sync2 <= sync1; sync1 <= pins_in;
 
-            // ---- FIFOs (host and engine can act in the same clock)
-            if (host_push_ok) begin txm[tx_wr] <= host_push_data; tx_wr <= tx_wr + 1'b1; end
-            if (tx_pop_eng || ser_pop) tx_rd <= tx_rd + 1'b1;
-            tx_cnt <= tx_cnt + {{TAW{1'b0}}, host_push_ok} - {{TAW{1'b0}}, (tx_pop_eng | ser_pop)};
+            // ---- RX FIFO (host and engine can act in the same clock; the TX FIFO is above)
             if (rx_push_eng)  begin rxm[rx_wr] <= rx_push_data; rx_wr <= rx_wr + 2'd1; end
             if (host_pop_ok)  rx_rd <= rx_rd + 2'd1;
             rx_cnt <= rx_cnt + {2'b0, rx_push_eng} - {2'b0, host_pop_ok};
