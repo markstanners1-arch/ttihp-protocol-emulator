@@ -12,7 +12,8 @@
   "//": "repo root, odb_stripes.py), replacing the flow's GeneratePDN; pdn_cfg.tcl is LibreLane's without the per-macro grid.",
 
   "PL_TARGET_DENSITY_PCT": 60,
-  "CLOCK_PERIOD": 20,
+  "//": "40 MHz: a 10 Mbit Manchester half-bit is then exactly two clocks.",
+  "CLOCK_PERIOD": 25,
   "PL_RESIZER_HOLD_SLACK_MARGIN": 0.1,
   "GRT_RESIZER_HOLD_SLACK_MARGIN": 0.05,
   "RUN_LINTER": 1,
@@ -55,7 +56,7 @@
   "MAGIC_DEF_LABELS": 0,
   "MAGIC_WRITE_LEF_PINONLY": 1,
 
-  "//": "Three macros (236.80 x 64.36 um) along the bottom edge, FS so their Metal2 signal pins face the core; x on the 44.96 grid (k = 0, 6, 12).",
+  "//": "Four macros (236.80 x 64.36 um) along the bottom edge, FS so their Metal2 signal pins face the core; x on the 44.96 grid (k = 0, 6, 12, 18).",
   "MACROS": {
     "RM_IHPSG13_1P_64x16_c2": {
       "gds": ["pdk_dir::libs.ref/sg13cmos5l_sram/gds/RM_IHPSG13_1P_64x16_c2.gds"],
@@ -71,7 +72,8 @@
       "instances": {
         "chip.eng[0].e.imem.sram": {"location": [3.36, 3.78], "orientation": "FS"},
         "chip.eng[1].e.imem.sram": {"location": [273.12, 3.78], "orientation": "FS"},
-        "chip.eng[2].e.imem.sram": {"location": [542.88, 3.78], "orientation": "FS"}
+        "chip.eng[2].e.imem.sram": {"location": [542.88, 3.78], "orientation": "FS"},
+        "chip.eng[3].e.imem.sram": {"location": [812.64, 3.78], "orientation": "FS"}
       }
     }
   },
@@ -81,7 +83,9 @@
     "chip\\.eng\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.eng\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
     "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
-    "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!"
+    "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
+    "chip\\.eng\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.eng\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!"
   ],
   "//": "Routing kept off the macro footprints on the tile's routing layers: from the die edge (y 0, so no wire runs under a macro) and 2 um past each side, stopping 2.6 um short of the pin face at the top (y 68.14).",
   "ROUTING_OBSTRUCTIONS": [
@@ -93,7 +97,10 @@
     "Metal4 271.12 0 511.92 65.5",
     "Metal2 540.88 0 781.68 65.5",
     "Metal3 540.88 0 781.68 65.5",
-    "Metal4 540.88 0 781.68 65.5"
+    "Metal4 540.88 0 781.68 65.5",
+    "Metal2 810.64 0 1051.44 65.5",
+    "Metal3 810.64 0 1051.44 65.5",
+    "Metal4 810.64 0 1051.44 65.5"
   ],
 
   "//": "Timing repair as kdp1965/ihp-um-janestreet-prism: the macro's clock-to-data is about 5.3 ns at the slow corner, so the instruction fan-out must be buffered with strong cells and repaired again on routed parasitics.",

@@ -6,7 +6,7 @@
 `default_nettype none
 
 module protocol_chip #(
-    parameter NENG = 3                  // engines, 1 to 8 (the host's engine field is 3 bits)
+    parameter NENG = 4                  // engines, 1 to 8 (the host's engine field is 3 bits)
 ) (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,

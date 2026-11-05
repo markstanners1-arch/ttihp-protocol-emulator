@@ -19,7 +19,7 @@ module tt_um_gosforth_protocol_emu (
     input  wire       clk,
     input  wire       rst_n
 );
-    protocol_chip chip (                    // three engines (chip.v's default; four did not place on the 6x4 tile, 3 Nov 2026)
+    protocol_chip chip (                    // four engines (chip.v default on this branch; SRAM macro program stores)
         .ui_in(ui_in), .uo_out(uo_out), .uio_in(uio_in), .uio_out(uio_out), .uio_oe(uio_oe),
         .ena(ena), .clk(clk), .rst_n(rst_n));
 endmodule
