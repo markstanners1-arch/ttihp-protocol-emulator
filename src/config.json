@@ -83,16 +83,24 @@
     "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.eng\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!"
   ],
-  "//": "Routing kept off the macro footprints on the tile's routing layers, stopping 2.6 um short of the pin face at the top (y 68.14).",
+  "//": "Routing kept off the macro footprints on the tile's routing layers: from the die edge (y 0, so no wire runs under a macro) and 2 um past each side, stopping 2.6 um short of the pin face at the top (y 68.14).",
   "ROUTING_OBSTRUCTIONS": [
-    "Metal2 3.36 3.78 240.16 65.5",
-    "Metal3 3.36 3.78 240.16 65.5",
-    "Metal4 3.36 3.78 240.16 65.5",
-    "Metal2 273.12 3.78 509.92 65.5",
-    "Metal3 273.12 3.78 509.92 65.5",
-    "Metal4 273.12 3.78 509.92 65.5",
-    "Metal2 542.88 3.78 779.68 65.5",
-    "Metal3 542.88 3.78 779.68 65.5",
-    "Metal4 542.88 3.78 779.68 65.5"
-  ]
+    "Metal2 1.36 0 242.16 65.5",
+    "Metal3 1.36 0 242.16 65.5",
+    "Metal4 1.36 0 242.16 65.5",
+    "Metal2 271.12 0 511.92 65.5",
+    "Metal3 271.12 0 511.92 65.5",
+    "Metal4 271.12 0 511.92 65.5",
+    "Metal2 540.88 0 781.68 65.5",
+    "Metal3 540.88 0 781.68 65.5",
+    "Metal4 540.88 0 781.68 65.5"
+  ],
+
+  "//": "Timing repair as kdp1965/ihp-um-janestreet-prism: the macro's clock-to-data is about 5.3 ns at the slow corner, so the instruction fan-out must be buffered with strong cells and repaired again on routed parasitics.",
+  "MAX_TRANSITION_CONSTRAINT": 0.75,
+  "MAX_FANOUT_CONSTRAINT": 8,
+  "DESIGN_REPAIR_MAX_SLEW_PCT": 25,
+  "DESIGN_REPAIR_REMOVE_BUFFERS": 1,
+  "PL_RESIZER_SETUP_SLACK_MARGIN": 0.25,
+  "RUN_POST_GRT_RESIZER_TIMING": true
 }
