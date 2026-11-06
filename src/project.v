@@ -19,7 +19,7 @@ module tt_um_gosforth_protocol_emu (
     input  wire       clk,
     input  wire       rst_n
 );
-    protocol_chip #(.NENG(4)) chip (        // four engines, SRAM macro program stores and engine 0 TX FIFO (src/ is a copy of the design repository's)
+    protocol_chip #(.NENG(3)) chip (        // three engines, SRAM macro program stores and engine 0 TX FIFO (src/ is a copy of the design repository's)
         .ui_in(ui_in), .uo_out(uo_out), .uio_in(uio_in), .uio_out(uio_out), .uio_oe(uio_oe),
         .ena(ena), .clk(clk), .rst_n(rst_n));
 endmodule
