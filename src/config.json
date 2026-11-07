@@ -59,8 +59,8 @@
   "MAGIC_DEF_LABELS": 0,
   "MAGIC_WRITE_LEF_PINONLY": 1,
 
-  "//": "Three program-store macros (236.80 x 64.36 um): engines 0 and 2 on the bottom edge (FS), engine 1 on the top edge (N), so their Metal2 signal pins face the core; x on the 44.96 grid (k = 15, 3, 18).",
-  "//": "Engine 0's TX FIFO macro on the bottom edge beside engine 0's program store (k = 21, a 32.96 um gap), FS.",
+  "//": "Four program-store macros (236.80 x 64.36 um) in columns on the bottom edge (FS), so their Metal2 signal pins face the core: engines 1, 2, 3, 0 at x 3.36, 273.12, 542.88, 812.64 (44.96 grid, k = 0, 6, 12, 18).",
+  "//": "Engine 0's TX FIFO macro at the top of engine 0's column (x 812.64, k = 18; y 638.82), N, clear of the top-edge pins.",
   "MACROS": {
     "RM_IHPSG13_1P_64x16_c2": {
       "gds": ["pdk_dir::libs.ref/sg13cmos5l_sram/gds/RM_IHPSG13_1P_64x16_c2.gds"],
@@ -74,10 +74,11 @@
         "nom_slow_1p08V_125C": ["pdk_dir::libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_64x16_c2_slow_1p08V_125C.lib"]
       },
       "instances": {
-        "chip.clu[0].u.eng_slot[0].e.imem.sram": {"location": [677.76, 3.78], "orientation": "FS"},
-        "chip.clu[0].u.eng_slot[1].e.imem.sram": {"location": [812.64, 638.82], "orientation": "N"},
-        "chip.clu[0].u.eng_slot[2].e.imem.sram": {"location": [138.24, 3.78], "orientation": "FS"},
-        "chip.clu[0].u.eng_slot[0].e.tx_mem.txmem.sram": {"location": [947.52, 3.78], "orientation": "FS"}
+        "chip.clu[0].u.eng_slot[1].e.imem.sram": {"location": [3.36, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[2].e.imem.sram": {"location": [273.12, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[3].e.imem.sram": {"location": [542.88, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[0].e.imem.sram": {"location": [812.64, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[0].e.tx_mem.txmem.sram": {"location": [812.64, 638.82], "orientation": "N"}
       }
     }
   },
@@ -87,21 +88,26 @@
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[0\\\\?\\]\\.e\\.tx_mem\\.txmem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[0\\\\?\\]\\.e\\.tx_mem\\.txmem\\.sram VPWR VGND VDDARRAY! VSS!"
   ],
   "//": "Routing kept off the macro footprints on the tile's routing layers, 2 um past each side: bottom-edge macros from the die edge (y 0) to 2.64 um short of the pin face (y 68.14); the top-edge macro from 2.64 um above its pin face (y 638.82) to the die edge.",
   "ROUTING_OBSTRUCTIONS": [
-    "Metal2 136.24 0 377.04 65.5",
-    "Metal3 136.24 0 377.04 65.5",
-    "Metal4 136.24 0 377.04 65.5",
-    "Metal2 675.76 0 916.56 65.5",
-    "Metal3 675.76 0 916.56 65.5",
-    "Metal4 675.76 0 916.56 65.5",
-    "Metal2 945.52 0 1186.32 65.5",
-    "Metal3 945.52 0 1186.32 65.5",
-    "Metal4 945.52 0 1186.32 65.5",
+    "Metal2 1.36 0 242.16 65.5",
+    "Metal3 1.36 0 242.16 65.5",
+    "Metal4 1.36 0 242.16 65.5",
+    "Metal2 271.12 0 511.92 65.5",
+    "Metal3 271.12 0 511.92 65.5",
+    "Metal4 271.12 0 511.92 65.5",
+    "Metal2 540.88 0 781.68 65.5",
+    "Metal3 540.88 0 781.68 65.5",
+    "Metal4 540.88 0 781.68 65.5",
+    "Metal2 810.64 0 1051.44 65.5",
+    "Metal3 810.64 0 1051.44 65.5",
+    "Metal4 810.64 0 1051.44 65.5",
     "Metal2 810.64 641.46 1051.44 710.64",
     "Metal3 810.64 641.46 1051.44 710.64",
     "Metal4 810.64 641.46 1051.44 710.64"
