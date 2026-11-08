@@ -387,17 +387,17 @@ From the Tiny Tapeout flow's layout run for this commit's design (IHP SG13 CMOS5
 |---|---|
 | Die | 1289.28 x 710.64 µm |
 | Core area | 902,417 µm² |
-| Standard cells | 23,658 (310,792 µm²) |
+| Standard cells | 24,785 (329,326 µm²) |
 | SRAM blocks | 5 x RM_IHPSG13_1P_64x16_c2 (76,202 µm²): four program memories, engine A's TX FIFO |
-| Utilisation | 42.9 % (standard cells 37.6 %) |
+| Utilisation | 44.9 % (standard cells 39.9 %) |
 | Flip-flops and other sequential cells | 1,834 |
-| Setup, worst slack | 6.55 ns slow corner (1.08 V, 125 °C); 13.63 ns typical; 16.62 ns fast |
-| Hold, worst slack | 0.029 ns fast corner (1.32 V, -40 °C); 0.122 ns typical; 0.251 ns slow |
+| Setup, worst slack | 6.39 ns slow corner (1.08 V, 125 °C); 13.50 ns typical; 16.84 ns fast |
+| Hold, worst slack | 0.145 ns fast corner (1.32 V, -40 °C); 0.276 ns typical; 0.503 ns slow (hold fixing aimed at 0.15 ns) |
 | Setup and hold violations | 0 at all three corners |
 | DRC | 0 (KLayout and detailed routing) |
 | LVS | 0 differences |
-| Antenna | 0 violating nets (157 diodes inserted) |
-| Warnings | 2,751 maximum-slew and 129 maximum-fanout, at the slow corner |
+| Antenna | 0 violating nets (144 diodes inserted) |
+| Warnings | 2,657 maximum-slew and 131 maximum-fanout, at the slow corner |
 | Power, flow estimate | 5.8 mW |
 
 ![Layout of the four-engine chip, rendered by the Tiny Tapeout flow: four program memories along the bottom, engine A's TX FIFO at the top right](layout.jpg)
