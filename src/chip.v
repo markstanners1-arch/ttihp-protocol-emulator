@@ -20,7 +20,11 @@ module protocol_chip #(
     output wire [7:0] uio_oe,
     input  wire       ena,
     input  wire       clk,
-    input  wire       rst_n
+    input  wire       rst_n,
+    // engine 0's receive pin: the pad it names, out to a latch that holds it at the falling edge of clk (in the
+    // wrapper: a technology latch on the ASIC, a falling-edge flip-flop on an FPGA), and that latch's output back in
+    output wire       rx_pad,
+    input  wire       rx_fall
 );
     localparam [3:0] NENG4 = NENG;      // for the ID register
 
@@ -65,11 +69,25 @@ module protocol_chip #(
                                       .in(in_s2), .out(in_f));
     wire [31:0] pins_in = {12'd0, in_f[12:8], 7'd0, in_f[7:0]};   // 0-7 uio, 15-19 ui_in[3..7]
 
+    // the receiver's two samples bypass the glitch filter (a filter set for buses would swallow 50 ns pulses, and
+    // receive must not depend on a setting shared by every pin). Rising edge: the synchronised pin (in_s2) and one
+    // flip-flop in place of the filter's stage. Falling edge: the pad latched outside, then three flip-flops to match
+    // in_s1, in_s2 and that stage. The engine then gets its two samples in time order, falling-edge one first.
+    wire [31:0] pads = {12'd0, ui_in[7:3], 7'd0, uio_in};
+    wire [4:0]  rx_pin;
+    assign rx_pad = pads[rx_pin];
+    reg  [2:0]  rx_al;
+    always @(posedge clk) rx_al <= {rx_al[1:0], rx_fall};
+    wire [31:0] pins_s2 = {12'd0, in_s2[12:8], 7'd0, in_s2[7:0]};
+    reg         rx_rs;
+    always @(posedge clk) rx_rs <= pins_s2[rx_pin];
+
     // ------------------------------------------------------------ the clusters
     wire [15:0] c_rdata [0:NCLUSTER-1];
     wire [31:0] c_val   [0:NCLUSTER-1];
     wire [31:0] c_drv   [0:NCLUSTER-1];
     wire        c_irq   [0:NCLUSTER-1];
+    wire [4:0]  c_rxpin [0:NCLUSTER-1];
 
     genvar c;
     generate
@@ -79,7 +97,8 @@ module protocol_chip #(
             cluster #(.NENG(NENG), .NSLOT(4), .NPIN(32), .TXDEPTH0(TXDEPTH0), .SER0(SER0), .CRC(CRC)) u (
                 .clk(clk), .rst_n(rst_n),
                 .wr(h_wr && sel_r), .pop(h_pop && sel_r), .eng(h_eng), .addr(h_addr), .wdata(h_wdata), .rdata(c_rdata[c]),
-                .pins_in(pins_in), .out_val(c_val[c]), .out_dir(c_drv[c]), .irq(c_irq[c]));
+                .pins_in(pins_in), .out_val(c_val[c]), .out_dir(c_drv[c]), .irq(c_irq[c]),
+                .rx_pin(c_rxpin[c]), .rx_fall(c == 0 ? rx_al[2] : 1'b0), .rx_rise(c == 0 ? rx_rs : 1'b0));
         end
     endgenerate
 
@@ -102,6 +121,7 @@ module protocol_chip #(
     end
 
     // ------------------------------------------------------------ cluster 0's pin bank to the chip pins (this package has one bank)
+    assign rx_pin = c_rxpin[0];                 // the one pin bank's receiver is cluster 0's engine 0
     wire [31:0] drv = c_drv[0], val = c_val[0];
     assign uio_oe  = drv[7:0];
     assign uio_out = val[7:0] & drv[7:0];

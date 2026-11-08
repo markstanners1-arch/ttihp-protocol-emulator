@@ -66,6 +66,25 @@ module engine #(
     output wire        ser_under,
     output wire [31:0] crc,
 
+    // receiver (SER = 1 only): settings, the falling-edge sample of the receive pin, the host's requests, the status
+    input  wire [4:0]  cfg_rx_pin,        // RXCFG[4:0]
+    input  wire        cfg_rx_raw,        // RXCFG[5]
+    input  wire        cfg_rx_both,       // RXCFG[6]
+    input  wire [15:0] cfg_rxgap,
+    input  wire        rx_fall,           // the receive pin at the last falling edge of clk (a latch outside)
+    input  wire        rx_rise,           // the receive pin at the rising edge, before the chip's glitch filter
+    input  wire        mode_wr,           // keyed SERCFG write: mode = mode_val
+    input  wire [1:0]  mode_val,          // 0 transmit, 1 receive, 2 full duplex
+    input  wire        rx_arm,            // RXCFG write with the arm bit
+    input  wire        host_bpop,         // host read of a received word (0x26 in receive mode, 0x37 in either)
+    output wire [15:0] host_bpop_data,    // the buffer's head word
+    output wire        buf_ready,         // ... and it is valid (a buffer read takes it this clock)
+    output wire [1:0]  mode,              // engine 0's mode (0 transmit, 1 receive, 2 full duplex)
+    output wire [5:0]  rb_level,          // full duplex: words in the receive ring (for testing)
+    output wire        rx_held,           // full duplex: a received word waits for the memory port (for testing)
+    output wire        rx_ready,
+    output wire [15:0] rxstat,
+
     // engine state, visible for testing
     output reg  [4:0]  pc,
     output reg  [15:0] x,
@@ -136,43 +155,96 @@ module engine #(
     reg        tx_pop_eng;          // PULL takes the head this clock (from the logic below)
     wire       ser_pop;             // the serialiser takes the head this clock
 
-    wire   tx_full       = (tx_cnt == TXDEPTH);
+    wire   rx_only       = (mode == 2'd1);  // receive: the program and the host are kept out of the buffer
+    wire   fdx           = (mode == 2'd2);  // full duplex: the buffer is two rings, 16 transmit + 48 receive
+    wire   tx_full       = fdx ? (tx_cnt == 7'd16) : (tx_cnt == TXDEPTH);
     assign tx_level      = {{(6-TAW){1'b0}}, tx_cnt};
     assign rx_level      = rx_cnt;
     assign host_pop_data = rxm[rx_rd];
-    wire   host_push_ok  = host_push && !tx_full;
+    wire   host_push_ok  = host_push && !tx_full && !rx_only;      // the host cannot fill the buffer in receive mode
     wire   host_pop_ok   = host_pop  && (rx_cnt != 3'd0);
-    wire   tx_pop        = tx_pop_eng | ser_pop;
+    wire   bpop_ok       = host_bpop && rx_only && tx_ready;       // receive: the host reads a received word
+    wire   tx_pop        = tx_pop_eng | ser_pop | bpop_ok;
+    wire        rb_ready;               // full duplex: the receive ring's head word is valid
+    wire [15:0] rb_head;
+    wire        rb_pop  = host_bpop && fdx && rb_ready;            // full duplex: the host reads a received word
+    wire        rcv_wr;                 // the receiver writes a word (receive: into the buffer; full duplex: the hold)
+    wire [15:0] rcv_wdata;
+    wire        rcv_accept;             // a mode change taken this clock
+    wire        rcv_clear;              // an accepted mode change or an arm
+    wire        rcv_full;               // the receiver's word would not fit
+    assign host_bpop_data = fdx ? rb_head : tx_head;
+    assign buf_ready      = fdx ? rb_ready : tx_ready;
 
     generate if (TXDEPTH == 64) begin : tx_mem
         // One-port memory (src/fifo_mem.v: flip-flops, or the IHP block with USE_SRAM) behind a head register.
         // A host push writes the memory. On a clock with no push, if the head is empty or taken this clock and the
         // memory holds a word not yet read, that word is read: it is the head from the next clock. tx_hv = head valid.
         // The head is captured into hold on the clock after a read, so it never relies on the memory output holding.
+        // Full duplex (fdx): two rings in the one memory, words 0-15 transmit and 16-63 receive, each with its own
+        // pointers, count and head register; a received word waits in a one-word hold until the port is free. The port's
+        // turns: the host's push, then the held word, then the transmit head's refill, then the receive head's refill.
         reg         tx_hv, rd_last;
         reg  [15:0] hold;
+        reg  [5:0]  rb_rd, rb_wr, rb_cnt;   // receive ring: offsets 0-47 (memory words 16-63) and its count
+        reg         rb_hv, rbd_last;
+        reg  [15:0] rbhold;
+        reg         hw_v;                   // the hold register: a received word waiting for the port
+        reg  [15:0] hw_d;
         wire [15:0] mq;
-        wire [TAW:0] unread = tx_cnt - {{TAW{1'b0}}, tx_hv};
-        wire        we = rst_n && host_push_ok;
-        wire        re = rst_n && !host_push_ok && (!tx_hv || tx_pop) && (unread != {(TAW+1){1'b0}});
-        fifo_mem txmem (.clk(clk), .we(we), .re(re), .addr(we ? tx_wr : tx_rd), .wdata(host_push_data), .rdata(mq));
+        wire [TAW:0] unread  = tx_cnt - {{TAW{1'b0}}, tx_hv};
+        wire [5:0]  unread_r = rb_cnt - {5'd0, rb_hv};
+        wire        hold_free = fdx && hw_v && !host_push_ok;
+        wire        busy_f    = host_push_ok || hold_free;
+        wire        want_t    = (!tx_hv || tx_pop) && (unread != {(TAW+1){1'b0}});
+        wire        want_r    = (!rb_hv || rb_pop) && (unread_r != 6'd0);
+        wire        wt = rst_n && (host_push_ok || (!fdx && rcv_wr));   // a write into the transmit ring (or the one buffer)
+        wire        we = fdx ? (rst_n && busy_f) : wt;
+        wire        re_t = rst_n && (fdx ? (!busy_f && want_t) : (!we && want_t));
+        wire        re_r = rst_n && fdx && !busy_f && !want_t && want_r;
+        wire [5:0]  tx_wr_a = fdx ? {2'b00, tx_wr[3:0]} : tx_wr;
+        wire [5:0]  tx_rd_a = fdx ? {2'b00, tx_rd[3:0]} : tx_rd;
+        wire [5:0]  addr = host_push_ok ? tx_wr_a : hold_free ? (6'd16 + rb_wr) : (!fdx && rcv_wr) ? tx_wr_a :
+                           re_t ? tx_rd_a : (6'd16 + rb_rd);
+        fifo_mem txmem (.clk(clk), .we(we), .re(re_t || re_r), .addr(addr),
+                        .wdata(host_push_ok ? host_push_data : fdx ? hw_d : rcv_wdata), .rdata(mq));
         assign tx_head  = rd_last ? mq : hold;
         assign tx_ready = tx_hv;
+        assign rb_head  = rbd_last ? mq : rbhold;
+        assign rb_ready = rb_hv;
+        assign rb_level = rb_cnt;
+        assign rx_held  = hw_v;
+        assign rcv_full = fdx ? ((rb_cnt + {5'd0, hw_v} >= 6'd48) || (hw_v && !hold_free)) : tx_full;
+        wire   arm_only = rcv_clear && !rcv_accept;
         always @(posedge clk) begin
-            if (!rst_n) begin
+            if (!rst_n || rcv_accept || (arm_only && rx_only)) begin
                 tx_rd <= 0; tx_wr <= 0; tx_cnt <= 0; tx_hv <= 1'b0; rd_last <= 1'b0;
             end else begin
-                if (we) tx_wr <= tx_wr + 1'b1;
-                if (re) tx_rd <= tx_rd + 1'b1;
-                tx_cnt  <= tx_cnt + {{TAW{1'b0}}, we} - {{TAW{1'b0}}, tx_pop};
-                tx_hv   <= re ? 1'b1 : (tx_pop ? 1'b0 : tx_hv);
-                rd_last <= re;
+                if (wt) tx_wr <= fdx ? {2'b00, tx_wr[3:0] + 4'd1} : tx_wr + 1'b1;
+                if (re_t) tx_rd <= fdx ? {2'b00, tx_rd[3:0] + 4'd1} : tx_rd + 1'b1;
+                tx_cnt  <= tx_cnt + {{TAW{1'b0}}, wt} - {{TAW{1'b0}}, tx_pop};
+                tx_hv   <= re_t ? 1'b1 : (tx_pop ? 1'b0 : tx_hv);
+                rd_last <= re_t;
             end
             if (rd_last) hold <= mq;
+            if (!rst_n || rcv_accept || (arm_only && fdx)) begin
+                rb_rd <= 6'd0; rb_wr <= 6'd0; rb_cnt <= 6'd0; rb_hv <= 1'b0; rbd_last <= 1'b0; hw_v <= 1'b0;
+            end else begin
+                if (hold_free) rb_wr <= (rb_wr == 6'd47) ? 6'd0 : rb_wr + 6'd1;
+                if (re_r) rb_rd <= (rb_rd == 6'd47) ? 6'd0 : rb_rd + 6'd1;
+                rb_cnt   <= rb_cnt + {5'd0, hold_free} - {5'd0, rb_pop};
+                rb_hv    <= re_r ? 1'b1 : (rb_pop ? 1'b0 : rb_hv);
+                rbd_last <= re_r;
+                hw_v     <= (fdx && rcv_wr) ? 1'b1 : (hold_free ? 1'b0 : hw_v);
+            end
+            if (fdx && rcv_wr) hw_d <= rcv_wdata;
+            if (rbd_last) rbhold <= mq;
         end
     end else begin : tx_ff
         // Flip-flop FIFO: a pushed word is visible from the next clock.
         reg [15:0] txm [0:TXDEPTH-1];
+        assign rb_head = 16'd0; assign rb_ready = 1'b0; assign rb_level = 6'd0; assign rx_held = 1'b0;
+        assign rcv_full = tx_full;
         assign tx_head  = txm[tx_rd];
         assign tx_ready = (tx_cnt != {(TAW+1){1'b0}});
         always @(posedge clk) begin
@@ -199,8 +271,9 @@ module engine #(
         serialiser u_ser (
             .clk(clk), .rst_n(rst_n),
             .cfg_en(cfg_sercfg[0]), .cfg_manch(cfg_sercfg[1]), .cfg_endm(cfg_sercfg[3]), .cfg_crcap(cfg_sercfg[4]),
-            .cfg_crccpl(cfg_sercfg[5]), .cfg_skip(cfg_sercfg[12:10]), .cfg_serdiv(cfg_serdiv), .cfg_out_right(cfg_out_right),
-            .start(ser_start), .start_count(ser_count),
+            .cfg_crccpl(cfg_sercfg[5]), .cfg_skip(cfg_sercfg[12:10]), .cfg_pre(cfg_sercfg[9]), .cfg_serdiv(cfg_serdiv), .cfg_out_right(cfg_out_right),
+            .start(rcv_accept || (ser_start && !rx_only)),             // receive mode: MOV ser refused; a mode
+            .start_count(rcv_accept ? 16'd0 : ser_count),              // change stops the serialiser (count 0)
             .tx_cnt(tx_level), .tx_full(tx_full), .tx_ready(tx_ready), .tx_head(tx_head), .tx_pop(ser_pop),
             .crc(crc), .crc_clr(ser_crc_clr), .crc_step(ser_crc_step), .crc_bit(ser_crc_bit),
             .busy(ser_busy), .under(ser_under), .own(ser_own), .line(ser_line));
@@ -227,8 +300,29 @@ module engine #(
         wire _unused_crc = &{cfg_crcpoly, cfg_crcinit, crc_clr_time, ser_crc_clr, crc_ser_mode, ser_crc_step, in_step,
                              ser_crc_bit, in_bit, 1'b0};
     end endgenerate
-    // what WAIT sees: the pins, except index 24 on the serialiser's engine = busy
-    wire [31:0] wait_src = SER ? {sync2[31:25], ser_busy, sync2[23:0]} : sync2;
+    // ---- the receiver (engine 0, with the 64-word buffer)
+    generate if (SER && TXDEPTH == 64) begin : with_rx
+        wire        r_over, r_locked, r_refused, r_idle;
+        wire [3:0]  r_left;
+        wire [6:0]  r_words;
+        receiver u_rx (
+            .clk(clk), .rst_n(rst_n),
+            .cfg_raw(cfg_rx_raw), .cfg_both(cfg_rx_both), .cfg_in_right(cfg_in_right), .cfg_rxgap(cfg_rxgap),
+            .rise_in(rx_rise), .fall_in(rx_fall),
+            .mode_wr(mode_wr), .mode_val(mode_val), .arm(rx_arm), .start_req(ser_start && cfg_sercfg[0]),
+            .ser_busy(ser_busy), .buf_full(rcv_full),
+            .mode(mode), .refused(r_refused), .wr(rcv_wr), .wdata(rcv_wdata), .clear(rcv_clear),
+            .ready(rx_ready), .over(r_over), .locked(r_locked), .left(r_left), .words(r_words), .idle(r_idle),
+            .accept(rcv_accept));
+        assign rxstat = {mode != 2'd0, r_words, r_left, r_refused, r_locked, r_over, rx_ready};
+        wire _unused_rx = &{r_idle, 1'b0};
+    end else begin : no_rx
+        assign mode = 2'd0; assign rx_ready = 1'b0; assign rxstat = 16'd0;
+        assign rcv_wr = 1'b0; assign rcv_wdata = 16'd0; assign rcv_clear = 1'b0; assign rcv_accept = 1'b0;
+        wire _unused_rx = &{cfg_rx_pin, cfg_rx_raw, cfg_rx_both, cfg_rxgap, rx_fall, rx_rise, mode_wr, mode_val, rx_arm, 1'b0};
+    end endgenerate
+    // what WAIT sees: the pins, except index 24 on the serialiser's engine = busy, 25 = a received frame is ready
+    wire [31:0] wait_src = SER ? {sync2[31:26], rx_ready, ser_busy, sync2[23:0]} : sync2;
 
     // ------------------------------------------------------------------ working values for one step
     // (combinational: every one is assigned at the top of the always @(*) block)
@@ -375,7 +469,7 @@ module engine #(
                         end
                     end else begin
                         if (a[6] && osr_count < 5'd16) begin
-                        end else if (!tx_ready || ser_busy) begin   // while the serialiser is busy the FIFO is its own
+                        end else if (!tx_ready || ser_busy || rx_only) begin   // serialiser busy or receive mode: not the program's
                             if (a[5]) stall = 1'b1;
                             else begin n_osr = x; n_osr_count = 0; end
                         end else begin

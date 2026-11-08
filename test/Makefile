@@ -6,13 +6,15 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v chip.v cluster.v serialiser.v crc32.v host_spi.v engine.v prog_mem.v fifo_mem.v glitch_filter.v sram_64x16.v
+PROJECT_SOURCES = project.v chip.v cluster.v serialiser.v receiver.v crc32.v host_spi.v engine.v prog_mem.v fifo_mem.v glitch_filter.v sram_64x16.v
 
 ifneq ($(GATES),yes)
 
 # RTL simulation:
 SIM_BUILD				= sim_build/rtl
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
+# the one IHP cell the wrapper names (the receive pin's latch), as a behavioural model
+VERILOG_SOURCES += $(PWD)/rtl_cells.v
 
 else
 

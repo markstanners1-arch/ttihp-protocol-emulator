@@ -25,6 +25,7 @@ module serialiser (
     input  wire        cfg_crcap,
     input  wire        cfg_crccpl,
     input  wire [2:0]  cfg_skip,
+    input  wire        cfg_pre,         // SERCFG[9]: hardware preamble (seven 0x55 and the SFD, LSB first)
     input  wire [15:0] cfg_serdiv,
     input  wire        cfg_out_right,
     // from the engine: MOV ser this clock
@@ -55,6 +56,7 @@ module serialiser (
     reg [4:0]  bitn;
     reg        half, wskip;
     reg [2:0]  skip;
+    reg [6:0]  pre;                     // preamble bits still to send before the first word's bits
 
     // next state
     reg [1:0]  n_phase;
@@ -62,6 +64,8 @@ module serialiser (
     reg [4:0]  n_bitn;
     reg        n_half, n_wskip, n_busy, n_under;
     reg [2:0]  n_skip;
+    reg [6:0]  n_pre;
+    reg        first;
     reg        do_load;
 
     wire        cur_bit  = cfg_out_right ? sh[0] : sh[15];
@@ -71,7 +75,7 @@ module serialiser (
 
     always @(*) begin
         n_phase = phase; n_words = words; n_sh = sh; n_divc = divc; n_bitn = bitn;
-        n_half = half; n_wskip = wskip; n_busy = busy; n_under = under; n_skip = skip;
+        n_half = half; n_wskip = wskip; n_busy = busy; n_under = under; n_skip = skip; n_pre = pre; first = 1'b0;
         tx_pop = 1'b0; crc_clr = 1'b0; crc_step = 1'b0; crc_bit = 1'b0; do_load = 1'b0;
         if (cfg_en) begin
             if (start) begin                                        // MOV ser: restart with the new count; 0 stops
@@ -83,7 +87,7 @@ module serialiser (
                 end
             end else if (busy) begin
                 if (phase == FILL) begin                            // waiting for the whole frame to be in the FIFO
-                    if (({9'd0, tx_cnt} >= words || tx_full) && tx_ready) do_load = 1'b1;
+                    if (({9'd0, tx_cnt} >= words || tx_full) && tx_ready) begin do_load = 1'b1; first = 1'b1; end
                 end else if (divc != 16'd0) begin                   // inside a half-bit
                     n_divc = divc - 16'd1;
                 end else begin                                      // a half-bit boundary
@@ -95,7 +99,10 @@ module serialiser (
                         n_half = 1'b1;
                     end else begin                                  // a bit boundary
                         n_half = 1'b0;
-                        if (phase == DATA) begin
+                        if (phase == DATA && pre != 7'd0) begin    // a preamble bit has ended
+                            n_pre = pre - 7'd1;
+                            if (pre == 7'd1) begin crc_step = !wskip; crc_bit = cur_bit; end   // the first word's first bit
+                        end else if (phase == DATA) begin
                             if (bitn < 5'd15) begin
                                 n_bitn = bitn + 5'd1; n_sh = next_sh;
                                 crc_step = !wskip; crc_bit = next_bit;
@@ -119,7 +126,8 @@ module serialiser (
                     n_bitn = 5'd0; n_half = 1'b0; n_divc = cfg_serdiv; n_phase = DATA;
                     n_wskip = (skip != 3'd0);
                     if (skip != 3'd0) n_skip = skip - 3'd1;
-                    crc_step = (skip == 3'd0); crc_bit = load_bit;
+                    crc_step = (skip == 3'd0) && !(first && cfg_pre); crc_bit = load_bit;
+                    if (first) n_pre = cfg_pre ? 7'd64 : 7'd0;    // set afresh for every frame
                 end
             end
         end
@@ -128,17 +136,18 @@ module serialiser (
     always @(posedge clk) begin
         if (!rst_n) begin
             busy <= 1'b0; under <= 1'b0; phase <= FILL; words <= 16'd0; sh <= 16'd0; divc <= 16'd0;
-            bitn <= 5'd0; half <= 1'b0; wskip <= 1'b0; skip <= 3'd0;
+            bitn <= 5'd0; half <= 1'b0; wskip <= 1'b0; skip <= 3'd0; pre <= 7'd0;
         end else begin
             busy <= n_busy; under <= n_under; phase <= n_phase; words <= n_words; sh <= n_sh; divc <= n_divc;
-            bitn <= n_bitn; half <= n_half; wskip <= n_wskip; skip <= n_skip;
+            bitn <= n_bitn; half <= n_half; wskip <= n_wskip; skip <= n_skip; pre <= n_pre;
         end
     end
 
     // the encoded level
     wire [4:0] crc_idx = cfg_out_right ? bitn : 5'd31 - bitn;
     wire       crc_b   = crc[crc_idx] ^ cfg_crccpl;
-    wire       raw     = (phase == DATA) ? cur_bit : crc_b;
+    wire       pre_bit = (pre == 7'd1) || !pre[0];                     // 1 0 1 0 ... 1 1
+    wire       raw     = (phase == DATA) ? ((pre != 7'd0) ? pre_bit : cur_bit) : crc_b;
     assign line = (phase == END) ? 1'b1 : (cfg_manch ? (half ? raw : ~raw) : raw);
     assign own  = busy && (phase != FILL);
 endmodule

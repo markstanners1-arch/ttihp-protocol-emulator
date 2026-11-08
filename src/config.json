@@ -41,6 +41,9 @@
   "RIGHT_MARGIN_MULT": 6,
   "FP_SIZING": "absolute",
   "GRT_ALLOW_CONGESTION": 1,
+  "//": "Antenna repair after detailed routing: diodes only, up to 10 rounds (the default 3 left one net over Ant.b on the receive build).",
+  "DRT_ANTENNA_REPAIR_DIODE_ONLY": true,
+  "DRT_ANTENNA_REPAIR_ITERS": 10,
   "FP_IO_HLENGTH": 2,
   "FP_IO_VLENGTH": 2,
 

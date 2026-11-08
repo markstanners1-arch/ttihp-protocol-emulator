@@ -21,6 +21,7 @@ project:
     - "chip.v"
     - "cluster.v"
     - "serialiser.v"
+    - "receiver.v"
     - "crc32.v"
     - "host_spi.v"
     - "engine.v"

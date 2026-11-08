@@ -81,3 +81,6 @@ if { [info exists ::env(OPENLANE_SDC_IDEAL_CLOCKS)] && $::env(OPENLANE_SDC_IDEAL
     set_propagated_clock [all_clocks]
 }
 
+
+# engine 0 receive pin: asynchronous to clk, latched at the falling edge (u_rx_fall) then synchronised
+set_false_path -to [get_pins u_rx_fall/D]
