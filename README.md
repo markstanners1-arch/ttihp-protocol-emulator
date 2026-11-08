@@ -2,7 +2,8 @@
 
 # Protocol emulator
 
-Three small programmable engines behind an SPI host port, for Tiny Tapeout on IHP SG13 CMOS5L (6x4 tiles, 50 MHz).
+Four small programmable engines behind an SPI host port, engine A with a bit-cell serialiser (Manchester or NRZ, up to
+10 Mbit/s), for Tiny Tapeout on IHP SG13 CMOS5L (6x4 tiles, 40 MHz).
 Each engine runs its own 32-instruction program, one instruction per tick of its own clock divider, on the chip's 19
 protocol pins. UART, SPI, I2C, NEC infrared and DALI are programs, not fixed hardware, and the same engines measure
 the wire with a stopwatch instruction and a programmable input glitch filter. A host microcontroller loads the programs
@@ -11,7 +12,7 @@ and exchanges data through the SPI port. Top module: `tt_um_gosforth_protocol_em
 - Datasheet: [docs/info.md](docs/info.md) (instruction set, host port registers, pinout, test results, layout figures)
 - Design repository: [github.com/markstanners1-arch/protocol-asic](https://github.com/markstanners1-arch/protocol-asic)
   (Python reference model, random side-by-side tests, whole-chip test, engine programs, FPGA builds, bench records).
-  `src/` here is a copy of its `src/`.
+  `src/` here is the Verilog this chip is built from.
 - Layout viewer: [markstanners1-arch.github.io/ttihp-protocol-emulator](https://markstanners1-arch.github.io/ttihp-protocol-emulator/)
 
 ## Run the test
