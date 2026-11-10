@@ -62,7 +62,7 @@
   "MAGIC_DEF_LABELS": 0,
   "MAGIC_WRITE_LEF_PINONLY": 1,
 
-  "//": "Four program-store macros (236.80 x 64.36 um) in columns on the bottom edge (FS), so their Metal2 signal pins face the core: engines 1, 2, 3, 0 at x 3.36, 273.12, 542.88, 812.64 (44.96 grid, k = 0, 6, 12, 18).",
+  "//": "Four program-store macros (236.80 x 64.36 um) in columns on the bottom edge (FS), so their Metal2 signal pins face the core: engines 1, 2, 3, 0 at x 3.36, 273.12, 542.88, 812.64 (44.96 grid, k = 0, 6, 12, 18), engine 4 at x 1082.40 (k = 24).",
   "//": "Engine 0's 1024-word buffer, RM_IHPSG13_1P_1024x16_c2_bm_bist (236.80 x 336.46 um, the same pin and supply-column layout as the 64x16, taller), at the top of engine 0's column (x 812.64, k = 18; y 366.66 = 97 rows, top 703.12), N: pins face down into the core, clear of the top-edge pins (x 30-191).",
   "MACROS": {
     "RM_IHPSG13_1P_64x16_c2": {
@@ -80,7 +80,8 @@
         "chip.clu[0].u.eng_slot[1].e.imem.sram": {"location": [3.36, 3.78], "orientation": "FS"},
         "chip.clu[0].u.eng_slot[2].e.imem.sram": {"location": [273.12, 3.78], "orientation": "FS"},
         "chip.clu[0].u.eng_slot[3].e.imem.sram": {"location": [542.88, 3.78], "orientation": "FS"},
-        "chip.clu[0].u.eng_slot[0].e.imem.sram": {"location": [812.64, 3.78], "orientation": "FS"}
+        "chip.clu[0].u.eng_slot[0].e.imem.sram": {"location": [812.64, 3.78], "orientation": "FS"},
+        "chip.clu[0].u.eng_slot[4].e.imem.sram": {"location": [1082.40, 3.78], "orientation": "FS"}
       }
     },
     "RM_IHPSG13_1P_1024x16_c2_bm_bist": {
@@ -104,6 +105,8 @@
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[0\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[1\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[4\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
+    "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[4\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[3\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDD! VSS!",
     "chip\\.clu\\\\?\\[0\\\\?\\]\\.u\\.eng_slot\\\\?\\[2\\\\?\\]\\.e\\.imem\\.sram VPWR VGND VDDARRAY! VSS!",
@@ -125,6 +128,9 @@
     "Metal2 810.64 0 1051.44 65.5",
     "Metal3 810.64 0 1051.44 65.5",
     "Metal4 810.64 0 1051.44 65.5",
+    "Metal2 1080.40 0 1321.20 65.5",
+    "Metal3 1080.40 0 1321.20 65.5",
+    "Metal4 1080.40 0 1321.20 65.5",
     "Metal2 810.64 369.30 1051.44 710.64",
     "Metal3 810.64 369.30 1051.44 710.64",
     "Metal4 810.64 369.30 1051.44 710.64"
