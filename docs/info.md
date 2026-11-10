@@ -36,7 +36,7 @@ the optional CRC units.
 | Input conditioning | 2-flip-flop synchroniser and a glitch filter on every input |
 | Host interface | SPI mode 0, 16-bit command and 16-bit words, SCK at most clk / 8; IRQ output |
 | Clock | 40 MHz (10 Mbit/s Manchester is two clocks per half-bit) |
-| Process | IHP SG13 CMOS5L (130 nm), Tiny Tapeout 6x4 tiles |
+| Process | IHP SG13 CMOS5L (130 nm), Tiny Tapeout 8x4 tiles |
 
 ### What a program sees
 

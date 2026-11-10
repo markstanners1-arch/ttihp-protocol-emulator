@@ -3,7 +3,7 @@
 # Protocol emulator
 
 Four small programmable engines behind an SPI host port, engine A with a bit-cell serialiser (Manchester or NRZ, up to
-10 Mbit/s), for Tiny Tapeout on IHP SG13 CMOS5L (6x4 tiles, 40 MHz).
+10 Mbit/s), for Tiny Tapeout on IHP SG13 CMOS5L (8x4 tiles, 40 MHz).
 Each engine runs its own 32-instruction program, one instruction per tick of its own clock divider, on the chip's 19
 protocol pins. UART, SPI, I2C, NEC infrared and DALI are programs, not fixed hardware, and the same engines measure
 the wire with a stopwatch instruction and a programmable input glitch filter. A host microcontroller loads the programs
