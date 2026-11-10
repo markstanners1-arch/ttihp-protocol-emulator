@@ -7,7 +7,7 @@
 `default_nettype none
 
 module protocol_chip #(
-    parameter NENG     = 3,             // engines per cluster, 1 to 4 (the host's engine field is 3 bits)
+    parameter NENG     = 3,             // engines per cluster, 1 to 8 (the host's engine field is 3 bits)
     parameter NCLUSTER = 1,             // clusters, 1 to 64 (the host's cluster field is 6 bits); this package has one pin bank
     parameter TXDEPTH0 = 1024,          // engine 0's TX FIFO depth (the serialiser's frame buffer): 1024 on the ASIC, 64 on the FPGAs
     parameter SER0     = 1,             // engine 0 has the serialiser (the MachXO3L kit's default build leaves it out)
@@ -94,7 +94,7 @@ module protocol_chip #(
         for (c = 0; c < NCLUSTER; c = c + 1) begin : clu
             reg sel_r;                  // this cluster is addressed (registered: see the cluster decode note above)
             always @(posedge clk) sel_r <= rst_n & (h_clu == c);
-            cluster #(.NENG(NENG), .NSLOT(4), .NPIN(32), .TXDEPTH0(TXDEPTH0), .SER0(SER0), .CRC(CRC)) u (
+            cluster #(.NENG(NENG), .NSLOT(8), .NPIN(32), .TXDEPTH0(TXDEPTH0), .SER0(SER0), .CRC(CRC)) u (
                 .clk(clk), .rst_n(rst_n),
                 .wr(h_wr && sel_r), .pop(h_pop && sel_r), .eng(h_eng), .addr(h_addr), .wdata(h_wdata), .rdata(c_rdata[c]),
                 .pins_in(pins_in), .out_val(c_val[c]), .out_dir(c_drv[c]), .irq(c_irq[c]),
