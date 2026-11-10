@@ -98,7 +98,7 @@ module cluster #(
             end
 
             wire [15:0] pop_data;
-            wire [6:0]  txl;
+            wire [10:0] txl;
             wire [2:0]  rxl;
             wire [4:0]  e_pc;
             wire        e_busy, e_under;
@@ -109,7 +109,7 @@ module cluster #(
             wire [15:0] bpop_data, e_rxstat;
             wire        e_bufready, e_rxready;
             wire [1:0]  e_mode;
-            wire [5:0]  e_rblevel;
+            wire [10:0] e_rblevel, e_rxwords;
             wire        e_held;
             wire _unused_fdx = &{e_rblevel, e_held, 1'b0};   // for the engine-level tests only
             // the mode changes only on a SERCFG write carrying the key 101 in [15:13]: [8] full duplex, else [7] receive
@@ -140,7 +140,7 @@ module cluster #(
                 .mode_val(wdata[8] ? 2'd2 : {1'b0, wdata[7]}), .rx_arm(rx_arm),
                 .host_bpop(pop && sel && ((addr == 6'h26 && e_mode == 2'd1) || addr == 6'h37)), .host_bpop_data(bpop_data),
                 .buf_ready(e_bufready), .mode(e_mode), .rb_level(e_rblevel), .rx_held(e_held),
-                .rx_ready(e_rxready), .rxstat(e_rxstat));
+                .rx_ready(e_rxready), .rxstat(e_rxstat), .rx_words(e_rxwords));
 
             // host reads of this slot: the address picks the word here, the cluster then picks the slot
             reg [15:0] rd;
@@ -155,7 +155,7 @@ module cluster #(
                     6'h26: rd = (e_mode == 2'd1 && e_bufready) ? bpop_data : 16'd0;   // receive mode: the received words
                     6'h27: rd = (rxl != 0) ? pop_data : 16'd0;
                     6'h28: rd = {e_under, e_busy, e_pc, run, 1'b0, rxl, 1'b0,
-                                 (txl > 7'd7) ? 3'd7 : txl[2:0]};                // TX level saturating at 7
+                                 (txl > 11'd7) ? 3'd7 : txl[2:0]};               // TX level saturating at 7
                     6'h2B: rd = HAS_SER ? {3'd0, r_sercfg[12:9], e_mode[1], e_mode[0], r_sercfg[6:0]} : 16'd0;   // [8:7]: in force
                     6'h2C: rd = HAS_SER ? r_serdiv : 16'd0;
                     6'h2D: rd = r_crcpoly[15:0];
@@ -164,11 +164,13 @@ module cluster #(
                     6'h30: rd = r_crcinit[31:16];
                     6'h31: rd = e_crc[15:0];
                     6'h32: rd = e_crc[31:16];
-                    6'h33: rd = {6'd0, e_under, e_busy, 1'b0, txl};             // SERSTAT: the full TX level
+                    6'h33: rd = {6'd0, e_under, e_busy, 1'b0, (txl > 11'd127) ? 7'd127 : txl[6:0]};   // SERSTAT: level to 127
                     6'h34: rd = HAS_SER ? {9'd0, r_rxcfg} : 16'd0;
                     6'h35: rd = HAS_SER ? r_rxgap : 16'd0;
                     6'h36: rd = e_rxstat;                                         // RXSTAT (0 off engine 0)
                     6'h37: rd = (e_mode != 2'd0 && e_bufready) ? bpop_data : 16'd0;   // RXDATA: receive or full duplex
+                    6'h38: rd = {5'd0, txl};                                      // SERLEVEL: the TX level, unsaturated
+                    6'h39: rd = {5'd0, e_rxwords};                                // RXWORDS: words received, unsaturated
                     default: rd = 16'd0;
                 endcase
             end

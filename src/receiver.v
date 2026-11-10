@@ -14,7 +14,9 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-module receiver (
+module receiver #(
+    parameter [10:0] WMAX = 11'd127     // the word count saturates here: twice the buffer, less one
+) (
     input  wire        clk,
     input  wire        rst_n,
     // settings
@@ -31,7 +33,7 @@ module receiver (
     input  wire        arm,             // RXCFG write with the arm bit
     input  wire        start_req,       // MOV ser this clock with the serialiser enabled
     input  wire        ser_busy,
-    input  wire        buf_full,        // the buffer holds 64 words (start of the clock)
+    input  wire        buf_full,        // the buffer (or the receive ring) is full (start of the clock)
     // results
     output reg  [1:0]  mode,            // 0 transmit (reset), 1 receive, 2 full duplex
     output reg         refused,
@@ -42,7 +44,7 @@ module receiver (
     output reg         over,
     output wire        locked,
     output reg  [3:0]  left,            // bits in a partial last word
-    output reg  [6:0]  words,
+    output reg  [10:0] words,
     output wire        idle,
     output wire        accept          // a direction change taken this clock (it also stops the serialiser)
 );
@@ -66,7 +68,7 @@ module receiver (
     reg [15:0] n_gap, n_sh, w;
     reg [5:0]  n_run;
     reg [3:0]  n_bits, n_left;
-    reg [6:0]  n_words;
+    reg [10:0] n_words;
     integer    k;
 
     always @(*) begin
@@ -97,7 +99,7 @@ module receiver (
                                 w = cfg_in_right ? (n_sh >> (5'd16 - {1'b0, n_bits})) : (n_sh & ((16'd1 << n_bits) - 16'd1));
                                 n_left = n_bits; n_bits = 4'd0;
                                 if (buf_full) n_over = 1'b1;
-                                else begin wr = 1'b1; wdata = w; if (n_words != 7'd127) n_words = n_words + 7'd1; end
+                                else begin wr = 1'b1; wdata = w; if (n_words != WMAX) n_words = n_words + 11'd1; end
                             end
                             n_ready = 1'b1; n_st = DONE;
                         end
@@ -118,7 +120,7 @@ module receiver (
                             if (n_bits == 4'd15) begin
                                 n_bits = 4'd0;
                                 if (buf_full) n_over = 1'b1;
-                                else begin wr = 1'b1; wdata = n_sh; if (n_words != 7'd127) n_words = n_words + 7'd1; end
+                                else begin wr = 1'b1; wdata = n_sh; if (n_words != WMAX) n_words = n_words + 11'd1; end
                             end else n_bits = n_bits + 4'd1;
                         end
                     end
@@ -136,14 +138,14 @@ module receiver (
         if (!rst_n) begin
             mode <= 2'd0; refused <= 1'b0; f1 <= 1'b0; f2 <= 1'b0; r1 <= 1'b0; r2 <= 1'b0; lv <= 1'b0;
             armed <= 1'b0; st <= IDLE; gap <= 16'd0; run <= 6'd0; last <= 1'b0; sh <= 16'd0; bits <= 4'd0;
-            words <= 7'd0; left <= 4'd0; ready <= 1'b0; over <= 1'b0;
+            words <= 11'd0; left <= 4'd0; ready <= 1'b0; over <= 1'b0;
         end else begin
             f1 <= fall_in; f2 <= f1;
             r1 <= rise_in; r2 <= r1;
             lv <= n_lv;
             if (clear) begin
                 armed <= do_arm; st <= IDLE; gap <= 16'd0; run <= 6'd0; last <= 1'b0; sh <= 16'd0; bits <= 4'd0;
-                words <= 7'd0; left <= 4'd0; ready <= 1'b0; over <= 1'b0;
+                words <= 11'd0; left <= 4'd0; ready <= 1'b0; over <= 1'b0;
             end else begin
                 st <= n_st; gap <= n_gap; run <= n_run; last <= n_last; sh <= n_sh; bits <= n_bits;
                 words <= n_words; left <= n_left; ready <= n_ready; over <= n_over;

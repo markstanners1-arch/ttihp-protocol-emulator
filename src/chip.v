@@ -1,6 +1,6 @@
 // The whole chip: SPI host port + chip-wide input filter and ID register + NCLUSTER clusters (src/cluster.v), each of
-// NENG engines (3 on the ASIC, decided 3 Nov 2026: four do not place on the 6x4 tile; the MachXO3L kit fits 2, the
-// Cyclone IV board 3). Tiny Tapeout pin interface. Spec: docs/host_port.md (host side), docs/isa.md (engines),
+// NENG engines (the Tiny Tapeout wrapper sets 4 with CRC = 0; the MachXO3L kit build has 2, the Cyclone IV and Mojo
+// builds 3, or 2 with the serialiser). Tiny Tapeout pin interface. Spec: docs/host_port.md (host side), docs/isa.md (engines),
 // docs/core_design.md (hierarchy).
 
 `timescale 1ns/1ps
@@ -9,7 +9,7 @@
 module protocol_chip #(
     parameter NENG     = 3,             // engines per cluster, 1 to 4 (the host's engine field is 3 bits)
     parameter NCLUSTER = 1,             // clusters, 1 to 64 (the host's cluster field is 6 bits); this package has one pin bank
-    parameter TXDEPTH0 = 64,            // engine 0's TX FIFO depth (the serialiser's frame buffer)
+    parameter TXDEPTH0 = 1024,          // engine 0's TX FIFO depth (the serialiser's frame buffer): 1024 on the ASIC, 64 on the FPGAs
     parameter SER0     = 1,             // engine 0 has the serialiser (the MachXO3L kit's default build leaves it out)
     parameter CRC      = 1              // every engine has a CRC unit (likewise)
 ) (

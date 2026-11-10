@@ -32,7 +32,7 @@ module serialiser (
     input  wire        start,
     input  wire [15:0] start_count,
     // the TX FIFO
-    input  wire [6:0]  tx_cnt,
+    input  wire [10:0] tx_cnt,
     input  wire        tx_full,
     input  wire        tx_ready,      // the head word is ready (engine 0: see docs/isa.md, Host and FIFO timing)
     input  wire [15:0] tx_head,
@@ -87,7 +87,7 @@ module serialiser (
                 end
             end else if (busy) begin
                 if (phase == FILL) begin                            // waiting for the whole frame to be in the FIFO
-                    if (({9'd0, tx_cnt} >= words || tx_full) && tx_ready) begin do_load = 1'b1; first = 1'b1; end
+                    if (({5'd0, tx_cnt} >= words || tx_full) && tx_ready) begin do_load = 1'b1; first = 1'b1; end
                 end else if (divc != 16'd0) begin                   // inside a half-bit
                     n_divc = divc - 16'd1;
                 end else begin                                      // a half-bit boundary

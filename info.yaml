@@ -29,6 +29,7 @@ project:
     - "fifo_mem.v"
     - "glitch_filter.v"
     - "sram_64x16.v"
+    - "sram_1024x16.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 # This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
