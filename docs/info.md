@@ -4,7 +4,7 @@ The protocol emulator is four small programmable engines behind an SPI host port
 32-instruction program, one instruction per tick of its own clock divider, and drives or reads any of the chip's 19
 protocol pins. Serial protocols (UART, SPI, I2C, NEC infrared, DALI and others) are programs, not fixed hardware. A
 host microcontroller loads the programs and settings, pushes data to the engines and reads results back, all through
-four SPI wires and an interrupt line. Engine A also has a bit-cell serialiser with a 64-word transmit FIFO: it sends a
+four SPI wires and an interrupt line. Engine A also has a bit-cell serialiser and a Manchester receiver with a 1024-word buffer: it sends a
 whole frame, Manchester or NRZ, on one pin or a differential pair, at up to 10 Mbit/s (10BASE-T Ethernet framing).
 
 Every instruction takes an exact, known number of ticks, so a program sets the timing of the wire it drives. The same
@@ -30,7 +30,7 @@ the optional CRC units.
 | Program memory | 32 x 16-bit words per engine, in an IHP SRAM block, written by the host while the engine is stopped |
 | Instructions | 8 (instruction set v0.3) |
 | Engine tick | one every `clkdiv + 1` chip clocks, `clkdiv` 16 bits: 25 ns to 1.64 ms at 40 MHz |
-| FIFOs | 4 x 16-bit words each way per engine; engine A's transmit FIFO holds 64 words (an SRAM block) |
+| FIFOs | 4 x 16-bit words each way per engine; engine A's buffer holds 1024 words (an SRAM block): its transmit FIFO, its receive buffer, or 512 + 512 in full duplex |
 | Serialiser | engine A: Manchester or NRZ, single pin or differential pair, half-bit `serdiv + 1` clocks |
 | Protocol pins | 8 in/out (`uio[7:0]`), 6 out (`uo_out[7:2]`), 5 in (`ui_in[7:3]`) |
 | Input conditioning | 2-flip-flop synchroniser and a glitch filter on every input |
@@ -117,12 +117,12 @@ design repository.
 
 ### The serialiser (engine A)
 
-The serialiser sends whole frames from engine A's 64-word transmit FIFO without the program touching each bit. It runs
+The serialiser sends whole frames from engine A's 1024-word buffer without the program touching each bit. It runs
 on the chip clock: a half-bit is `serdiv + 1` clocks and a bit is two half-bits, so 10 Mbit/s Manchester at 40 MHz is
 `serdiv` = 1.
 
 - **Start.** The host pushes a word count and then that many words into engine A's TX FIFO, in one burst. The program
-  pulls the count and runs `mov ser, osr`. Nothing goes out until the FIFO holds the whole frame (up to 64 words), so
+  pulls the count and runs `mov ser, osr`. Nothing goes out until the FIFO holds the whole frame (up to 1024 words), so
   the host's SPI may be far slower than the wire.
 - **Data.** Each word goes out bit 0 first with `out_right`, bit 15 first without, with no gap between words. If the
   FIFO runs dry mid-frame the serialiser stops, lets go of the pins and sets its underrun flag.
@@ -131,13 +131,13 @@ on the chip clock: a half-bit is `serdiv + 1` clocks and a bit is two half-bits,
   TP_IDL).
 - **Ethernet on this chip.** The frame check sequence (FCS) is computed by the host and sent as the last two words:
   this chip is built without the CRC units that could append it. A minimum frame (preamble, 60 bytes, FCS) is 36
-  words, so it fits the 64-word FIFO. `programs/eth_tx.asm` is the program.
+  words; a full-size one (1518 bytes and the preamble) is 763, so it fits the 1024-word buffer whole. `programs/eth_tx.asm` is the program.
 
 | Register | Bits |
 |---|---|
 | SERCFG (0x2B) | `[0]` enable, `[1]` Manchester (else NRZ), `[2]` differential, `[3]` end marker; `[4]` CRC append must stay 0 on this chip; `[6:5]` and `[12:10]` affect only the CRC |
 | SERDIV (0x2C) | half-bit period in chip clocks, minus 1 |
-| SERSTAT (0x33) | `[6:0]` TX FIFO level (0-64), `[8]` busy, `[9]` underrun |
+| SERSTAT (0x33) | `[6:0]` TX FIFO level saturating at 127 (exact: SERLEVEL, 0x38), `[8]` busy, `[9]` underrun |
 
 For 10BASE-T framing: SERCFG = 0x000F (enable, Manchester, differential, end marker), SERDIV = 1, `out_right` = 1;
 a frame of W words drives the pair for `(32 W + 6) x 2` clocks.
@@ -223,7 +223,7 @@ harmless: writes are ignored and reads return 0.
 | 0x23 | OUTCFG | R/W | `[4:0]` out_base, `[9:5]` out_count (0-16), `[14:10]` set_base |
 | 0x24 | MISC | R/W | `[2:0]` set_count, `[7:3]` side_base, `[9:8]` side_count, `[10]` side_opt, `[11]` out_right, `[12]` in_right, `[13]` side_dir |
 | 0x25 | INCFG | R/W | `[4:0]` in_base, `[9:5]` jmp_pin, `[14:10]` fault_addr |
-| 0x26 | TXFIFO | W | push a word to the engine (dropped if the FIFO is full: check STATUS); engine A's holds 64 words, the others 4 |
+| 0x26 | TXFIFO | W | push a word to the engine (dropped if the FIFO is full: check STATUS); engine A's holds 1024 words, the others 4 |
 | 0x27 | RXFIFO | R | pop a word from the engine (reads 0 if empty) |
 | 0x28 | STATUS | R | `[2:0]` TX level, saturating at 7, `[6:4]` RX level, `[8]` running, `[13:9]` pc, `[14]` serialiser busy, `[15]` underrun (both 0 on engines B-D) |
 | 0x29 | FILTER | R/W | chip-wide, through any engine number: `[3:0]` N, `[7:4]` P |
@@ -231,7 +231,10 @@ harmless: writes are ignored and reads return 0.
 | 0x2B | SERCFG | R/W | engine A only (the serialiser; reads 0 on B-D) |
 | 0x2C | SERDIV | R/W | engine A only |
 | 0x2D-0x32 | CRC registers | R | read 0 on this chip (no CRC units) |
-| 0x33 | SERSTAT | R | engine A: `[6:0]` exact TX FIFO level, `[8]` busy, `[9]` underrun |
+| 0x33 | SERSTAT | R | engine A: `[6:0]` TX FIFO level saturating at 127, `[8]` busy, `[9]` underrun |
+| 0x34-0x37 | RXCFG, RXGAP, RXSTAT, RXDATA | | engine A's receiver, receive mode and full duplex: see `docs/host_port.md` in the design repository |
+| 0x38 | SERLEVEL | R | engine A: `[10:0]` the TX FIFO level, exact (0-1024; in full duplex the transmit ring's, 0-512) |
+| 0x39 | RXWORDS | R | engine A: `[10:0]` words received in this frame, exact |
 
 Unlisted registers read 0 and ignore writes. Every setting resets to 0 with the chip, engines stopped. Settings are
 changed while an engine is stopped and take effect when RUN goes to 1. A host push and an engine pull in the same clock
@@ -381,26 +384,21 @@ at every phase of the engine's tick, control gear 5 % and 10 % fast and slow, co
 
 ### Layout figures
 
-From the Tiny Tapeout flow's layout run for this commit's design (IHP SG13 CMOS5L, 6x4 tiles, 40 MHz clock).
+From the Tiny Tapeout flow's layout run of this design (branch `buffer-1k`, 10 Nov 2026: IHP SG13 CMOS5L, 8x4 tiles,
+40 MHz clock). Every job passed: layout, the gate-level test and the precheck.
 
 | Item | Value |
 |---|---|
-| Die | 1289.28 x 710.64 µm |
-| Core area | 902,417 µm² |
-| Standard cells | 24,785 (329,326 µm²) |
-| SRAM blocks | 5 x RM_IHPSG13_1P_64x16_c2 (76,202 µm²): four program memories, engine A's TX FIFO |
-| Utilisation | 44.9 % (standard cells 39.9 %) |
-| Flip-flops and other sequential cells | 1,834 |
-| Setup, worst slack | 6.39 ns slow corner (1.08 V, 125 °C); 13.50 ns typical; 16.84 ns fast |
-| Hold, worst slack | 0.145 ns fast corner (1.32 V, -40 °C); 0.276 ns typical; 0.503 ns slow (hold fixing aimed at 0.15 ns) |
-| Setup and hold violations | 0 at all three corners |
-| DRC | 0 (KLayout and detailed routing) |
-| LVS | 0 differences |
-| Antenna | 0 violating nets (144 diodes inserted) |
-| Warnings | 2,657 maximum-slew and 131 maximum-fanout, at the slow corner |
-| Power, flow estimate | 5.8 mW |
+| Die | 1724.16 x 710.64 µm (8x4 tiles) |
+| Core area | about 1.208 mm² |
+| Standard cells | 26,827 |
+| SRAM blocks | 4 x RM_IHPSG13_1P_64x16_c2 (the program memories), 1 x RM_IHPSG13_1P_1024x16_c2_bm_bist (engine A's buffer) |
+| Utilisation | 41.1 % |
+| Setup, worst slack | +7.15 ns |
+| Hold, worst slack | +0.135 ns (fast corner) |
+| DRC, LVS, antenna | 0 |
 
-![Layout of the four-engine chip, rendered by the Tiny Tapeout flow: four program memories along the bottom, engine A's TX FIFO at the top right](layout.jpg)
+![Layout of the earlier 6x4 four-engine chip, rendered by the Tiny Tapeout flow (to be refreshed from the 8x4 run): four program memories along the bottom, engine A's TX FIFO at the top right](layout.jpg)
 
 ## External hardware
 
